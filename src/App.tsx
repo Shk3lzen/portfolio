@@ -232,7 +232,7 @@ const App = () => {
                   </TechList>
                 </ProjectContent>
                 <ProjectImage>
-                  <img src="/ba.png" alt="Swifty Sports betting interface with horse racing odds and live data" />
+                  <img src="/b.png" alt="Swifty Sports betting interface with horse racing odds and live data" />
                 </ProjectImage>
               </ProjectItem>
 
@@ -254,7 +254,7 @@ const App = () => {
                   </TechList>
                 </ProjectContent>
                 <ProjectImage>
-                  <img src="/d.png" alt="Top Predictor sports prediction interface with leaderboards and competitions" />
+                  <img src="/ba.png" alt="Top Predictor sports prediction interface with leaderboards and competitions" />
                 </ProjectImage>
               </ProjectItem>
 
@@ -298,14 +298,14 @@ const App = () => {
                   </TechList>
                 </ProjectContent>
                 <ProjectImage>
-                  <img src="/b.png" alt="Asendio LXP learning platform interface with AI-powered content creation" />
+                  <img src="/d.png" alt="Asendio LXP learning platform interface with AI-powered content creation" />
                 </ProjectImage>
               </ProjectItem>
             </ProjectsSection>
 
-            <ViewArchiveLink href="/archive" target="_blank">
+            {/* <ViewArchiveLink href="/archive" target="_blank">
               View Full Project Archive ↗
-            </ViewArchiveLink>
+            </ViewArchiveLink> */}
 
             <Copyright>
               © 2025 Shkëlzen Berisha. All rights reserved.
