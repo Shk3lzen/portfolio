@@ -191,28 +191,28 @@ const App = () => {
 
           <Section id="projects">
             <ProjectsSection>
-              <ProjectItem>
+            <ProjectItem>
                 <ProjectContent>
                   <ProjectTitle>
-                    <Link href="https://www.speeex.com/" target="_blank">SPEEEX Platform</Link> ↗
+                    <Link href="https://www.asendio.io/en" target="_blank">Asendio LXP</Link> ↗
                   </ProjectTitle>
                   <ProjectDescription>
-                    Enterprise-level CX and digital transformation platform empowering brands through excellence. 
-                    Built scalable architecture with advanced accessibility features and maintained API frameworks 
-                    for optimal performance across the entire product suite.
+                    AI-Powered Learning Experience Platform revolutionizing corporate training. Features adaptive learning, 
+                    targeted growth modules, and real-time feedback systems trusted by leading enterprises including SPEEEX.
                   </ProjectDescription>
                   <TechList>
-                    <TechItem>React</TechItem>
-                    <TechItem>TypeScript</TechItem>
+                    <TechItem>Next.js</TechItem>
                     <TechItem>NestJS</TechItem>
-                    <TechItem>GraphQL</TechItem>
-                    <TechItem>AWS</TechItem>
+                    <TechItem>AI/ML</TechItem>
+                    <TechItem>Node.js</TechItem>
+                    <TechItem>TypeScript</TechItem>
                   </TechList>
                 </ProjectContent>
                 <ProjectImage>
-                  <img src="/a.png" alt="SPEEEX Platform interface showing digital transformation dashboard" />
+                  <img src="/d.png" alt="Asendio LXP learning platform interface with AI-powered content creation" />
                 </ProjectImage>
               </ProjectItem>
+            
 
               <ProjectItem>
                 <ProjectContent>
@@ -279,28 +279,29 @@ const App = () => {
                   <img src="/c.png" alt="Swifty Global platform showing sports betting interface and mobile app" />
                 </ProjectImage>
               </ProjectItem>
-
               <ProjectItem>
                 <ProjectContent>
                   <ProjectTitle>
-                    <Link href="https://www.asendio.io/en" target="_blank">Asendio LXP</Link> ↗
+                    <Link href="https://www.speeex.com/" target="_blank">SPEEEX Platform</Link> ↗
                   </ProjectTitle>
                   <ProjectDescription>
-                    AI-Powered Learning Experience Platform revolutionizing corporate training. Features adaptive learning, 
-                    targeted growth modules, and real-time feedback systems trusted by leading enterprises including SPEEEX.
+                    Enterprise-level CX and digital transformation platform empowering brands through excellence. 
+                    Built scalable architecture with advanced accessibility features and maintained API frameworks 
+                    for optimal performance across the entire product suite.
                   </ProjectDescription>
                   <TechList>
                     <TechItem>React</TechItem>
-                    <TechItem>NestJS</TechItem>
-                    <TechItem>AI/ML</TechItem>
-                    <TechItem>Node.js</TechItem>
                     <TechItem>TypeScript</TechItem>
+                    <TechItem>NestJS</TechItem> 
+                    <TechItem>MongoDB</TechItem>
+                    <TechItem>AWS</TechItem>
                   </TechList>
                 </ProjectContent>
                 <ProjectImage>
-                  <img src="/d.png" alt="Asendio LXP learning platform interface with AI-powered content creation" />
+                  <img src="/a.png" alt="SPEEEX Platform interface showing digital transformation dashboard" />
                 </ProjectImage>
               </ProjectItem>
+            
             </ProjectsSection>
 
             {/* <ViewArchiveLink href="/archive" target="_blank">
