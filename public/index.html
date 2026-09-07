@@ -6,10 +6,47 @@
     <link rel="alternate icon" href="%PUBLIC_URL%/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0a192f" />
+    <script>
+      // Set the theme before first paint to avoid a flash of the wrong colors.
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t !== 'light' && t !== 'dark') {
+            t = window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          document.documentElement.setAttribute('data-theme', t);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
     <meta
       name="description"
-      content="Shkëlzen Berisha - Software Developer specializing in accessible, pixel-perfect digital experiences"
+      content="Shkëlzen Berisha — Full-Stack Software Developer building scalable, high-performing web applications and backend systems with React, Node.js, NestJS and AWS."
     />
+    <link rel="canonical" href="https://shkelzzen.xyz/" />
+
+    <!-- Open Graph / Facebook / LinkedIn -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://shkelzzen.xyz/" />
+    <meta property="og:title" content="Shkëlzen Berisha — Full-Stack Software Developer" />
+    <meta
+      property="og:description"
+      content="I build scalable, high-performing web applications and backend systems with React, Node.js, NestJS and AWS."
+    />
+    <meta property="og:image" content="https://shkelzzen.xyz/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Shkëlzen Berisha — Full-Stack Software Developer" />
+    <meta
+      name="twitter:description"
+      content="I build scalable, high-performing web applications and backend systems with React, Node.js, NestJS and AWS."
+    />
+    <meta name="twitter:image" content="https://shkelzzen.xyz/og-image.png" />
+
     <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
     <!--
       manifest.json provides metadata used when your web app is installed on a
