@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { FiPlay } from 'react-icons/fi';
+import faceSrc from '../assets/runner-face.png';
 
-// A tiny endless runner: a pixel invader hops over posts. Space / ↑ / click / tap to jump.
+// A tiny endless runner: a pixel-art me hops over posts. Space / ↑ / click / tap to jump.
 
-const HEIGHT = 140;
+const HEIGHT = 160;
 const GROUND_OFFSET = 26; // distance from canvas bottom to the ground line
-const PIXEL = 4;
 const PLAYER_X = 48;
 const GRAVITY = 2200; // px/s²
 const JUMP_VELOCITY = -560; // px/s — apex ≈ 71px, clears the tallest post
@@ -15,16 +15,13 @@ const MAX_SPEED = 620;
 const ACCELERATION = 6; // px/s gained per second
 const POST_WIDTH = 18;
 const POST_HEIGHTS = [26, 32, 40];
-const PLAYER_COLOR = '#f0773a';
 const HIGH_SCORE_KEY = 'runner-high-score';
 
-// Two frames so the legs shuffle while running.
-const SPRITE_FRAMES = [
-  ['.XX....XX.', 'XXXXXXXXXX', 'XX.XXXX.XX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XX.X..X.XX', 'X........X'],
-  ['.XX....XX.', 'XXXXXXXXXX', 'XX.XXXX.XX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XX.X..X.XX', '.X......X.'],
-];
-const PLAYER_W = SPRITE_FRAMES[0][0].length * PIXEL;
-const PLAYER_H = SPRITE_FRAMES[0].length * PIXEL;
+// Pixel-art face sprite, drawn 1:1 in CSS pixels with smoothing off to keep it crisp.
+const PLAYER_W = 36;
+const PLAYER_H = 43;
+const faceImage = new Image();
+faceImage.src = faceSrc;
 
 type Status = 'idle' | 'running' | 'over';
 
@@ -141,15 +138,13 @@ const RunnerGame: React.FC = () => {
         ctx.fill();
       }
 
-      // Player
-      const legFrame = s.status === 'running' && s.y === 0 ? Math.floor(s.distance / 40) % 2 : 0;
-      const top = ground - PLAYER_H - s.y;
-      ctx.fillStyle = PLAYER_COLOR;
-      SPRITE_FRAMES[legFrame].forEach((row, r) => {
-        for (let c = 0; c < row.length; c++) {
-          if (row[c] === 'X') ctx.fillRect(PLAYER_X + c * PIXEL, top + r * PIXEL, PIXEL, PIXEL);
-        }
-      });
+      // Player — bobs a pixel while running along the ground
+      const bob = s.status === 'running' && s.y === 0 ? Math.floor(s.distance / 40) % 2 : 0;
+      const top = ground - PLAYER_H - s.y - bob;
+      if (faceImage.complete) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(faceImage, PLAYER_X, top, PLAYER_W, PLAYER_H);
+      }
 
       // Score
       ctx.textAlign = 'right';
@@ -201,7 +196,7 @@ const RunnerGame: React.FC = () => {
       }
 
       // Collision (slightly forgiving hitbox)
-      const inset = 4;
+      const inset = 6;
       const px1 = PLAYER_X + inset;
       const px2 = PLAYER_X + PLAYER_W - inset;
       for (const p of s.posts) {
@@ -276,8 +271,10 @@ const RunnerGame: React.FC = () => {
     stage.addEventListener('pointerdown', onPointer);
     document.addEventListener('visibilitychange', onVisibility);
     resize();
+    if (!faceImage.complete) faceImage.addEventListener('load', draw, { once: true });
 
     return () => {
+      faceImage.removeEventListener('load', draw);
       cancelAnimationFrame(frame);
       observer.disconnect();
       resizeObserver.disconnect();
