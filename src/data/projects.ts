@@ -97,7 +97,7 @@ export const projects: Project[] = [
     url: 'https://www.planetaccounting.org/www/index',
     description:
       'Accounting-firm marketing website built during a software development internship — presenting services, team and contact information in a clean, professional layout.',
-    tech: ['React', 'Next.js', 'TypeScript'],
+    tech: ['PHP', 'jQuery', 'MySQL'],
     year: '2020',
   },
 ];
