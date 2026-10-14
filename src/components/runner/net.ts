@@ -1,7 +1,8 @@
 // Multiplayer plumbing for the runner. Players find each other through a shared lobby
 // (presence) and exchange small broadcast messages. Uses Supabase Realtime when
-// REACT_APP_SUPABASE_URL / REACT_APP_SUPABASE_ANON_KEY are set; otherwise falls back to a
-// BroadcastChannel, which only connects tabs of the same browser (handy for local testing).
+// REACT_APP_SUPABASE_URL / REACT_APP_SUPABASE_ANON_KEY are set. Otherwise, in development it
+// tries the local relay (`npm run relay`, connects any browsers on this machine/network), and
+// finally a BroadcastChannel, which only connects tabs of the same browser.
 // Nothing is stored server-side and no IP addresses are shared between players.
 
 export type PlayerStatus = 'idle' | 'solo' | 'race';
@@ -93,17 +94,59 @@ const connectSupabase = async (
   };
 };
 
-// Same-browser fallback. Presence is emulated with heartbeats that expire.
-const connectLocal = (me: PeerMeta, handlers: TransportHandlers): Transport | null => {
+// A dumb message pipe: everything sent reaches every *other* participant.
+interface Pipe {
+  post(data: unknown): void;
+  listen(handler: (data: any) => void): void;
+  close(): void;
+}
+
+const broadcastChannelPipe = (): Pipe | null => {
   if (typeof BroadcastChannel === 'undefined') return null;
   const bc = new BroadcastChannel(LOBBY);
+  return {
+    post: (data) => bc.postMessage(data),
+    listen: (handler) => {
+      bc.onmessage = ({ data }) => handler(data);
+    },
+    close: () => bc.close(),
+  };
+};
+
+// Resolves once connected, or null if the relay isn't running.
+const relayPipe = (url: string): Promise<Pipe | null> =>
+  new Promise((resolve) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(url);
+    } catch {
+      resolve(null);
+      return;
+    }
+    const timer = window.setTimeout(() => ws.close(), 1500);
+    ws.onerror = () => resolve(null);
+    ws.onclose = () => resolve(null);
+    ws.onopen = () => {
+      window.clearTimeout(timer);
+      resolve({
+        post: (data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(data)),
+        listen: (handler) => {
+          ws.onmessage = ({ data }) => handler(JSON.parse(String(data)));
+        },
+        close: () => ws.close(),
+      });
+    };
+  });
+
+// Presence emulated over a pipe with heartbeats that expire.
+const pipeTransport = (pipe: Pipe, me: PeerMeta, handlers: TransportHandlers): Transport => {
   const peers = new Map<string, { meta: PeerMeta; seen: number }>();
   let current = me;
 
   const emitPeers = () => handlers.onPeers(Array.from(peers.values(), (p) => p.meta));
-  const hello = () => bc.postMessage({ kind: 'hello', meta: current });
+  const hello = () => pipe.post({ kind: 'hello', meta: current });
 
-  bc.onmessage = ({ data }) => {
+  pipe.listen((data) => {
     if (data.kind === 'hello') {
       const known = peers.has(data.meta.id);
       peers.set(data.meta.id, { meta: data.meta, seen: Date.now() });
@@ -115,7 +158,7 @@ const connectLocal = (me: PeerMeta, handlers: TransportHandlers): Transport | nu
     } else if (data.kind === 'msg') {
       handlers.onMessage(data.msg);
     }
-  };
+  });
 
   const heartbeat = window.setInterval(() => {
     hello();
@@ -126,7 +169,7 @@ const connectLocal = (me: PeerMeta, handlers: TransportHandlers): Transport | nu
     });
     if (changed) emitPeers();
   }, 2000);
-  const bye = () => bc.postMessage({ kind: 'bye', id: current.id });
+  const bye = () => pipe.post({ kind: 'bye', id: current.id });
   window.addEventListener('pagehide', bye);
   hello();
 
@@ -136,13 +179,13 @@ const connectLocal = (me: PeerMeta, handlers: TransportHandlers): Transport | nu
       hello();
     },
     send(msg) {
-      bc.postMessage({ kind: 'msg', msg });
+      pipe.post({ kind: 'msg', msg });
     },
     close() {
       bye();
       window.clearInterval(heartbeat);
       window.removeEventListener('pagehide', bye);
-      bc.close();
+      pipe.close();
     },
   };
 };
@@ -155,5 +198,10 @@ export const connect = async (me: PeerMeta, handlers: TransportHandlers): Promis
       /* fall through to local-only play */
     }
   }
-  return connectLocal(me, handlers);
+  if (process.env.NODE_ENV === 'development') {
+    const relay = await relayPipe(`ws://${window.location.hostname}:8787`);
+    if (relay) return pipeTransport(relay, me, handlers);
+  }
+  const local = broadcastChannelPipe();
+  return local && pipeTransport(local, me, handlers);
 };
