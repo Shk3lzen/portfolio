@@ -13,7 +13,6 @@ import {
   FiGithub,
   FiLinkedin,
   FiExternalLink,
-  FiMessageSquare,
   FiSearch,
 } from 'react-icons/fi';
 import { useTheme } from '../theme/ThemeContext';
@@ -73,7 +72,6 @@ const CommandPalette: React.FC = () => {
         icon: theme === 'dark' ? <FiSun /> : <FiMoon />,
         action: toggle,
       },
-      { id: 'ai', title: 'Ask about my work (AI)', group: 'Preferences', keywords: 'chat assistant question', icon: <FiMessageSquare />, action: () => window.dispatchEvent(new CustomEvent('open-ai-chat')) },
       { id: 'github', title: 'Open GitHub', group: 'Social', keywords: 'code repos', icon: <FiGithub />, action: () => openExternal('https://github.com/Shk3lzen') },
       { id: 'linkedin', title: 'Open LinkedIn', group: 'Social', keywords: 'contact connect', icon: <FiLinkedin />, action: () => openExternal('https://www.linkedin.com/in/shkelzen-berisha/') },
     ];
