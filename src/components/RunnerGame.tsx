@@ -18,7 +18,20 @@ import {
   scoreOf,
   speedAt,
 } from './runner/engine';
-import { connect, colorFor, getDeviceId, NetMessage, PeerMeta, PlayerStatus, Transport } from './runner/net';
+import {
+  connect,
+  cleanName,
+  colorFor,
+  defaultName,
+  getDeviceId,
+  loadName,
+  saveName,
+  MAX_NAME_LENGTH,
+  NetMessage,
+  PeerMeta,
+  PlayerStatus,
+  Transport,
+} from './runner/net';
 
 // A tiny endless runner: a pixel invader hops over posts and dodges drones.
 // Space / ↑ / click / tap to jump, hold for a higher jump, press again mid-air to double jump.
@@ -53,6 +66,7 @@ interface Ghost {
 }
 
 interface Placing {
+  name: string;
   color: string;
   score: number;
   you: boolean;
@@ -103,11 +117,15 @@ const RunnerGame: React.FC = () => {
   const colorsRef = useRef({ text: '#888', heading: '#ccc', border: '136, 146, 176' });
   const drawRef = useRef<() => void>(() => {});
   const startRaceRef = useRef<() => void>(() => {});
-  // Colour is per device; the id is per tab so two tabs on one computer can still race.
+  const announceRef = useRef<() => void>(() => {});
+  // Colour and name are per device; the id is per tab so two tabs on one computer can still race.
   const [me] = useState(() => {
     const deviceId = getDeviceId();
-    return { id: `${deviceId}-${Math.random().toString(36).slice(2, 6)}`, color: colorFor(deviceId) };
+    return { id: `${deviceId}-${Math.random().toString(36).slice(2, 6)}`, deviceId, color: colorFor(deviceId) };
   });
+  const [name, setName] = useState(() => loadName(me.deviceId));
+  const [nameDraft, setNameDraft] = useState(name);
+  const nameRef = useRef(name);
   const [peers, setPeers] = useState<PeerMeta[]>([]);
   const [myStatus, setMyStatus] = useState<PlayerStatus>('idle');
 
@@ -154,7 +172,8 @@ const RunnerGame: React.FC = () => {
     let visible = true;
     let transport: Transport | null = null;
     let closed = false;
-    let lobby: PeerMeta[] = [];
+    let lobby = new Map<string, PeerMeta>();
+    const nameOf = (id: string) => lobby.get(id)?.name ?? 'player';
 
     // ---- status shared with the lobby -------------------------------------------------
 
@@ -163,13 +182,18 @@ const RunnerGame: React.FC = () => {
       if (game.phase === 'running') return 'solo';
       return 'idle';
     };
+    const myMeta = (): PeerMeta => ({ id: me.id, name: nameRef.current, color: me.color, status: statusOf() });
     let lastStatus: PlayerStatus = 'idle';
     const syncStatus = () => {
       const status = statusOf();
       if (status === lastStatus) return;
       lastStatus = status;
       setMyStatus(status);
-      transport?.update({ ...me, status });
+      transport?.update(myMeta());
+    };
+    announceRef.current = () => {
+      transport?.update(myMeta());
+      draw();
     };
 
     // ---- drawing ----------------------------------------------------------------------
@@ -245,6 +269,17 @@ const RunnerGame: React.FC = () => {
       ctx.fillText(label, x - dir * 8, cy);
     };
 
+    // Name tag centred above a bot.
+    const drawNameTag = (x: number, y: number, label: string, color: string, alpha: number) => {
+      ctx.globalAlpha = alpha;
+      ctx.font = `10px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = color;
+      ctx.fillText(label, x + PLAYER_W / 2, GROUND_Y - PLAYER_H - y - 4);
+      ctx.globalAlpha = 1;
+    };
+
     const centerText = (msg: string, y: number, size = 13, color = colorsRef.current.text, weight = '') => {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -289,21 +324,21 @@ const RunnerGame: React.FC = () => {
       visibleGhosts().forEach((g) => {
         const x = PLAYER_X + g.d - camera;
         const gap = scoreOf(Math.abs(g.d - r.distance));
-        if (x > width) drawEdgeMarker('right', slots.right++, g.color, `+${gap}`);
-        else if (x + PLAYER_W < 0) drawEdgeMarker('left', slots.left++, g.color, `-${gap}`);
-        else drawSprite(x, g.y, g.color, g.alive && g.go ? Math.floor(g.d / 40) % 2 : 0, g.alive ? 0.55 : 0.2);
+        const label = nameOf(g.id);
+        if (x > width) drawEdgeMarker('right', slots.right++, g.color, `${label} +${gap}`);
+        else if (x + PLAYER_W < 0) drawEdgeMarker('left', slots.left++, g.color, `-${gap} ${label}`);
+        else {
+          const alpha = g.alive ? 0.55 : 0.2;
+          drawSprite(x, g.y, g.color, g.alive && g.go ? Math.floor(g.d / 40) % 2 : 0, alpha);
+          drawNameTag(x, g.y, label, g.color, Math.min(1, alpha + 0.3));
+        }
       });
 
       const myX = PLAYER_X + r.distance - camera;
       const legFrame = game.phase === 'running' && r.alive && r.y === 0 ? Math.floor(r.distance / 40) % 2 : 0;
-      drawSprite(myX, r.y, me.color, legFrame, r.alive || !racing ? 1 : 0.3);
-      if (racing && game.phase !== 'over') {
-        ctx.font = `10px ${FONT}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'bottom';
-        ctx.fillStyle = text;
-        ctx.fillText('you', myX + PLAYER_W / 2, GROUND_Y - PLAYER_H - r.y - 4);
-      }
+      const myAlpha = r.alive || !racing ? 1 : 0.3;
+      drawSprite(myX, r.y, me.color, legFrame, myAlpha);
+      drawNameTag(myX, r.y, nameRef.current, heading, myAlpha);
 
       // Score
       ctx.textAlign = 'right';
@@ -340,7 +375,7 @@ const RunnerGame: React.FC = () => {
           ctx.fillStyle = p.color;
           ctx.fillRect(width / 2 - 70, y - 5, 10, 10);
           ctx.fillStyle = p.you ? heading : text;
-          ctx.fillText(`${ordinal(i)}  ${p.you ? 'you' : 'racer'}  ${pad(p.score)}`, width / 2 - 52, y);
+          ctx.fillText(`${ordinal(i)}  ${p.name.padEnd(MAX_NAME_LENGTH)}  ${pad(p.score)}`, width / 2 - 52, y);
         });
         centerText('Press Space or tap to play again', 22 + Math.min(game.results.length, 4) * 18 + 8, 11);
       } else if (game.phase === 'over') {
@@ -376,8 +411,10 @@ const RunnerGame: React.FC = () => {
     };
 
     const finishRace = () => {
-      const placings: Placing[] = [{ color: me.color, score: scoreOf(game.runner.distance), you: true }];
-      racers().forEach((g) => placings.push({ color: g.color, score: scoreOf(g.d), you: false }));
+      const placings: Placing[] = [
+        { name: nameRef.current, color: me.color, score: scoreOf(game.runner.distance), you: true },
+      ];
+      racers().forEach((g) => placings.push({ name: nameOf(g.id), color: g.color, score: scoreOf(g.d), you: false }));
       game.results = placings.sort((a, b) => b.score - a.score);
       game.phase = 'over';
     };
@@ -475,7 +512,7 @@ const RunnerGame: React.FC = () => {
         beginRace(msg.raceId, msg.seed);
       } else if (msg.t === 'state' && msg.id !== me.id) {
         const known = game.ghosts.get(msg.id);
-        const color = known?.color ?? lobby.find((p) => p.id === msg.id)?.color ?? colorFor(msg.id);
+        const color = known?.color ?? lobby.get(msg.id)?.color ?? colorFor(msg.id);
         const { seed, raceId, y, d, alive, go } = msg;
         game.ghosts.set(msg.id, { id: msg.id, color, seed, raceId, y, d, alive, go, heardAt: performance.now() });
         startLoop();
@@ -488,10 +525,11 @@ const RunnerGame: React.FC = () => {
     const join = () => {
       if (joined) return;
       joined = true;
-      connect({ ...me, status: statusOf() }, {
+      connect(myMeta(), {
         onPeers: (list) => {
-          lobby = list;
+          lobby = new Map(list.map((p) => [p.id, p]));
           setPeers(list);
+          draw();
         },
         onMessage: onNetMessage,
       }).then((t) => {
@@ -562,6 +600,16 @@ const RunnerGame: React.FC = () => {
 
   const ready = peers.filter((p) => p.status === 'idle').length;
 
+  const commitName = () => {
+    const next = cleanName(nameDraft) || defaultName(me.deviceId);
+    setNameDraft(next);
+    if (next === name) return;
+    setName(next);
+    nameRef.current = next;
+    saveName(next);
+    announceRef.current();
+  };
+
   return (
     <Wrapper>
       <Heading>
@@ -576,24 +624,38 @@ const RunnerGame: React.FC = () => {
       >
         <canvas ref={canvasRef} aria-hidden="true" />
       </Stage>
-      {peers.length > 0 && (
-        <Lobby>
-          <Dots aria-hidden="true">
-            <Dot style={{ background: me.color }} title="you" />
-            {peers.slice(0, 8).map((p) => (
-              <Dot key={p.id} style={{ background: p.color, opacity: p.status === 'idle' ? 1 : 0.4 }} />
-            ))}
-          </Dots>
-          <LobbyText>
-            {peers.length} other{peers.length === 1 ? '' : 's'} here
-            {ready < peers.length && ` · ${peers.length - ready} playing`}
-          </LobbyText>
-          <RaceButton type="button" onClick={() => startRaceRef.current()} disabled={ready === 0 || myStatus !== 'idle'}>
-            <FiFlag />
-            Race
-          </RaceButton>
-        </Lobby>
-      )}
+      <Lobby>
+        <NameField>
+          <Dot style={{ background: me.color }} aria-hidden="true" />
+          <NameInput
+            value={nameDraft}
+            maxLength={MAX_NAME_LENGTH}
+            aria-label="Your player name"
+            spellCheck={false}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+              if (e.key === 'Escape') {
+                setNameDraft(name);
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        </NameField>
+        {peers.length > 0 && (
+          <>
+            <LobbyText title={peers.map((p) => p.name).join(', ')}>
+              {peers.length} other{peers.length === 1 ? '' : 's'} here
+              {ready < peers.length && ` · ${peers.length - ready} playing`}
+            </LobbyText>
+            <RaceButton type="button" onClick={() => startRaceRef.current()} disabled={ready === 0 || myStatus !== 'idle'}>
+              <FiFlag />
+              Race
+            </RaceButton>
+          </>
+        )}
+      </Lobby>
     </Wrapper>
   );
 };
@@ -646,9 +708,34 @@ const Lobby = styled.div`
   color: var(--text);
 `;
 
-const Dots = styled.div`
-  display: flex;
-  gap: 4px;
+const NameField = styled.label`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+`;
+
+const NameInput = styled.input`
+  width: 15ch;
+  min-width: 0;
+  padding: 3px 6px;
+  font: inherit;
+  color: var(--heading);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom-color: rgba(var(--border-rgb), 0.4);
+  border-radius: 3px;
+  transition: border-color 0.2s;
+
+  &:hover {
+    border-bottom-color: var(--accent);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
 `;
 
 const Dot = styled.span`

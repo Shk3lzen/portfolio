@@ -4,12 +4,13 @@
 //   2. a free public MQTT broker over secure WebSockets (EMQX, else HiveMQ) — no account needed;
 //   3. a BroadcastChannel, which only connects tabs of the same browser.
 // The public broker is open to anyone, so every incoming message is validated and anything
-// malformed is dropped. Only ids, colours and positions are sent; never IP addresses.
+// malformed is dropped. Only ids, names, colours and positions are sent; never IP addresses.
 
 export type PlayerStatus = 'idle' | 'solo' | 'race';
 
 export interface PeerMeta {
   id: string;
+  name: string;
   color: string;
   status: PlayerStatus;
 }
@@ -57,6 +58,47 @@ export const colorFor = (id: string) => {
   return `hsl(${Math.abs(hash) % 360}, 80%, 58%)`;
 };
 
+// ---- names ------------------------------------------------------------------------------
+
+const NAME_KEY = 'runner-name';
+const ADJECTIVES = ['Swift', 'Brave', 'Sneaky', 'Lucky', 'Turbo', 'Fuzzy', 'Mighty', 'Pixel', 'Cosmic', 'Jolly', 'Zippy', 'Sly'];
+const ANIMALS = ['Fox', 'Owl', 'Panda', 'Tiger', 'Otter', 'Koala', 'Falcon', 'Llama', 'Gecko', 'Moose', 'Lynx', 'Yak'];
+export const MAX_NAME_LENGTH = 14;
+
+// Letters (any language), digits, spaces, - and _ only; trimmed and capped.
+const NAME_DISALLOWED = new RegExp('[^\\p{L}\\p{N} _-]', 'gu');
+export const cleanName = (raw: string) =>
+  raw
+    .replace(NAME_DISALLOWED, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_NAME_LENGTH)
+    .trim();
+
+// A fun default like "Turbo Otter", stable per device.
+export const defaultName = (deviceId: string) => {
+  let hash = 0;
+  for (let i = 0; i < deviceId.length; i++) hash = (hash * 31 + deviceId.charCodeAt(i)) | 0;
+  hash = Math.abs(hash);
+  return `${ADJECTIVES[hash % ADJECTIVES.length]} ${ANIMALS[Math.floor(hash / ADJECTIVES.length) % ANIMALS.length]}`;
+};
+
+export const loadName = (deviceId: string) => {
+  try {
+    return cleanName(localStorage.getItem(NAME_KEY) ?? '') || defaultName(deviceId);
+  } catch {
+    return defaultName(deviceId);
+  }
+};
+
+export const saveName = (name: string) => {
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    /* ignore */
+  }
+};
+
 // ---- validation (messages from a public channel are untrusted) -------------------------
 
 const isId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v);
@@ -64,8 +106,12 @@ const isNum = (v: unknown, max: number): v is number => typeof v === 'number' &&
 const isColor = (v: unknown): v is string => typeof v === 'string' && /^hsl\(\d{1,3}, 80%, 58%\)$/.test(v);
 const STATUSES: PlayerStatus[] = ['idle', 'solo', 'race'];
 
+const isName = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && cleanName(v) === v;
+
 const parseMeta = (v: any): PeerMeta | null =>
-  v && isId(v.id) && isColor(v.color) && STATUSES.includes(v.status) ? { id: v.id, color: v.color, status: v.status } : null;
+  v && isId(v.id) && isName(v.name) && isColor(v.color) && STATUSES.includes(v.status)
+    ? { id: v.id, name: v.name, color: v.color, status: v.status }
+    : null;
 
 const parseMessage = (v: any): NetMessage | null => {
   if (!v) return null;
