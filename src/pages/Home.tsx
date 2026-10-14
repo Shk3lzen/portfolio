@@ -6,6 +6,7 @@ import { projects } from '../data/projects';
 import { useMouseSpotlight } from '../hooks/useMouseSpotlight';
 import Reveal from '../components/Reveal';
 import GitHubActivity from '../components/GitHubActivity';
+import RunnerGame from '../components/RunnerGame';
 
 const Home = () => {
   const [activeSection, setActiveSection] = useState('about');
@@ -217,6 +218,8 @@ const Home = () => {
             </ViewArchiveLink>
 
             <GitHubActivity />
+
+            <RunnerGame />
 
             <Copyright>
               © 2025 Shkëlzen Berisha. All rights reserved.
