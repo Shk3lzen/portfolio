@@ -34,6 +34,7 @@ import {
   todayKey,
 } from './runner/net';
 import { BoardState, Leaderboard, openLeaderboard, TOP_N } from './runner/leaderboard';
+import { SPRITE_FRAMES } from './runner/sprite';
 
 // A tiny endless runner: a pixel invader hops over posts and dodges drones.
 // Space / ↑ / click / tap to jump, hold for a higher jump, press again mid-air to double jump.
@@ -46,12 +47,6 @@ const STATE_INTERVAL_MS = 100; // position updates/s to other players: 10
 const STALE_MS = 3000; // a player we haven't heard from in this long is out
 const FORGET_MS = 6000; // …and is removed from the screen after this long
 const FONT = '"SF Mono", ui-monospace, Menlo, monospace';
-
-// Two frames so the legs shuffle while running.
-const SPRITE_FRAMES = [
-  ['.XX....XX.', 'XXXXXXXXXX', 'XX.XXXX.XX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XX.X..X.XX', 'X........X'],
-  ['.XX....XX.', 'XXXXXXXXXX', 'XX.XXXX.XX', 'XXXXXXXXXX', 'XXXXXXXXXX', 'XX.X..X.XX', '.X......X.'],
-];
 
 type Phase = 'idle' | 'countdown' | 'running' | 'over';
 

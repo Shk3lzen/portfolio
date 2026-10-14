@@ -6,6 +6,7 @@ import Archive from './pages/Archive';
 import { ThemeProvider } from './theme/ThemeContext';
 import Toolbar from './components/Toolbar';
 import CommandPalette from './components/CommandPalette';
+import Intro from './components/Intro';
 
 // Routes wrapped so each page can animate in/out on navigation.
 const AnimatedRoutes = () => {
@@ -28,6 +29,7 @@ const App = () => (
       <Toolbar />
       <AnimatedRoutes />
       <CommandPalette />
+      <Intro />
     </HashRouter>
   </ThemeProvider>
 );
