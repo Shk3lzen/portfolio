@@ -22,12 +22,14 @@ import { connect, colorFor, getDeviceId, NetMessage, PeerMeta, PlayerStatus, Tra
 
 // A tiny endless runner: a pixel invader hops over posts and dodges drones.
 // Space / ↑ / click / tap to jump, hold for a higher jump, press again mid-air to double jump.
-// When other visitors are on the page you can race them on the same course.
+// Everyone plays the same course each day, so other visitors' bots show up alongside yours;
+// the Race button lines everyone up for a synchronised start.
 
 const HIGH_SCORE_KEY = 'runner-high-score';
 const COUNTDOWN_MS = 3000;
-const STATE_INTERVAL_MS = 66; // ~15 updates/s to other racers
-const STALE_MS = 3000; // a racer we haven't heard from in this long is out
+const STATE_INTERVAL_MS = 100; // position updates/s to other players: 10
+const STALE_MS = 3000; // a player we haven't heard from in this long is out
+const FORGET_MS = 6000; // …and is removed from the screen after this long
 const FONT = '"SF Mono", ui-monospace, Menlo, monospace';
 
 // Two frames so the legs shuffle while running.
@@ -41,9 +43,12 @@ type Phase = 'idle' | 'countdown' | 'running' | 'over';
 interface Ghost {
   id: string;
   color: string;
+  seed: number;
+  raceId: string | null;
   y: number;
   d: number;
   alive: boolean;
+  go: boolean;
   heardAt: number;
 }
 
@@ -57,6 +62,7 @@ interface Game {
   phase: Phase;
   mode: 'solo' | 'race';
   runner: Runner;
+  seed: number;
   raceId: string | null;
   countdownEnd: number;
   ghosts: Map<string, Ghost>;
@@ -82,7 +88,13 @@ const saveHighScore = (score: number) => {
 };
 
 const pad = (n: number) => String(Math.min(n, 99999)).padStart(4, '0');
-const randomSeed = () => Math.floor(Math.random() * 2 ** 31);
+// One course per UTC day, shared by every visitor.
+const courseSeed = () => {
+  const day = new Date().toISOString().slice(0, 10);
+  let hash = 0;
+  for (let i = 0; i < day.length; i++) hash = (hash * 31 + day.charCodeAt(i)) | 0;
+  return hash >>> 0;
+};
 const ordinal = (n: number) => ['1st', '2nd', '3rd'][n] ?? `${n + 1}th`;
 
 const RunnerGame: React.FC = () => {
@@ -127,7 +139,8 @@ const RunnerGame: React.FC = () => {
     const game: Game = {
       phase: 'idle',
       mode: 'solo',
-      runner: newRunner(randomSeed()),
+      runner: newRunner(courseSeed()),
+      seed: courseSeed(),
       raceId: null,
       countdownEnd: 0,
       ghosts: new Map(),
@@ -215,10 +228,11 @@ const RunnerGame: React.FC = () => {
       ctx.fill();
     };
 
-    const drawEdgeMarker = (side: 'left' | 'right', y: number, color: string, label: string) => {
+    // Off-screen players: an arrow at the edge just above the ground (kept clear of the score).
+    const drawEdgeMarker = (side: 'left' | 'right', slot: number, color: string, label: string) => {
       const x = side === 'right' ? width - 10 : 10;
       const dir = side === 'right' ? 1 : -1;
-      const cy = GROUND_Y - PLAYER_H / 2 - y;
+      const cy = GROUND_Y - PLAYER_H / 2 - slot * 18;
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.moveTo(x + dir * 6, cy);
@@ -239,12 +253,16 @@ const RunnerGame: React.FC = () => {
       ctx.fillText(msg, width / 2, y);
     };
 
+    const racers = () => Array.from(game.ghosts.values()).filter((g) => g.raceId === game.raceId);
+    // Other players on the same course as us (everyone, unless the day rolled over mid-run).
+    const visibleGhosts = () => Array.from(game.ghosts.values()).filter((g) => g.seed === game.seed);
+
     const cameraDistance = () => {
       const r = game.runner;
       if (game.mode !== 'race' || r.alive || game.phase !== 'running') return r.distance;
       // Out of the race: follow whoever is leading.
       let lead = r.distance;
-      game.ghosts.forEach((g) => {
+      racers().forEach((g) => {
         if (g.alive) lead = Math.max(lead, g.d);
       });
       return lead;
@@ -267,15 +285,14 @@ const RunnerGame: React.FC = () => {
         if (x < width && x + o.w > 0) drawObstacle(o, x, heading, t);
       }
 
-      if (racing) {
-        game.ghosts.forEach((g) => {
-          const x = PLAYER_X + g.d - camera;
-          const gap = scoreOf(Math.abs(g.d - r.distance));
-          if (x > width) drawEdgeMarker('right', g.y, g.color, `+${gap}`);
-          else if (x + PLAYER_W < 0) drawEdgeMarker('left', g.y, g.color, `-${gap}`);
-          else drawSprite(x, g.y, g.color, g.alive ? Math.floor(g.d / 40) % 2 : 0, g.alive ? 0.55 : 0.2);
-        });
-      }
+      const slots = { left: 0, right: 0 };
+      visibleGhosts().forEach((g) => {
+        const x = PLAYER_X + g.d - camera;
+        const gap = scoreOf(Math.abs(g.d - r.distance));
+        if (x > width) drawEdgeMarker('right', slots.right++, g.color, `+${gap}`);
+        else if (x + PLAYER_W < 0) drawEdgeMarker('left', slots.left++, g.color, `-${gap}`);
+        else drawSprite(x, g.y, g.color, g.alive && g.go ? Math.floor(g.d / 40) % 2 : 0, g.alive ? 0.55 : 0.2);
+      });
 
       const myX = PLAYER_X + r.distance - camera;
       const legFrame = game.phase === 'running' && r.alive && r.y === 0 ? Math.floor(r.distance / 40) % 2 : 0;
@@ -311,7 +328,7 @@ const RunnerGame: React.FC = () => {
       } else if (game.phase === 'countdown') {
         const n = Math.max(1, Math.ceil((game.countdownEnd - t) / 1000));
         centerText(String(n), 62, 34, heading, '700');
-        centerText(`Race with ${game.ghosts.size + 1} players`, 92, 11);
+        centerText(`Race with ${racers().length + 1} players`, 92, 11);
       } else if (game.phase === 'running' && racing && !r.alive) {
         centerText('Out! Watching the leader…', 56);
       } else if (game.phase === 'over' && game.results) {
@@ -335,10 +352,19 @@ const RunnerGame: React.FC = () => {
     // ---- game flow --------------------------------------------------------------------
 
     const sendState = (now: number) => {
-      if (!transport || !game.raceId) return;
+      if (!transport) return;
       game.lastSent = now;
       const r = game.runner;
-      transport.send({ t: 'state', raceId: game.raceId, id: me.id, y: Math.round(r.y), d: Math.round(r.distance), alive: r.alive });
+      transport.send({
+        t: 'state',
+        id: me.id,
+        seed: game.seed,
+        raceId: game.raceId,
+        y: Math.round(r.y),
+        d: Math.round(r.distance),
+        alive: r.alive,
+        go: game.phase === 'running',
+      });
     };
 
     const recordScore = () => {
@@ -351,7 +377,7 @@ const RunnerGame: React.FC = () => {
 
     const finishRace = () => {
       const placings: Placing[] = [{ color: me.color, score: scoreOf(game.runner.distance), you: true }];
-      game.ghosts.forEach((g) => placings.push({ color: g.color, score: scoreOf(g.d), you: false }));
+      racers().forEach((g) => placings.push({ color: g.color, score: scoreOf(g.d), you: false }));
       game.results = placings.sort((a, b) => b.score - a.score);
       game.phase = 'over';
     };
@@ -365,21 +391,22 @@ const RunnerGame: React.FC = () => {
         step(r, dt);
         if (wasAlive && !r.alive) {
           recordScore();
+          sendState(now); // tell everyone right away that we're out
           if (game.mode === 'solo') game.phase = 'over';
-          else sendState(now);
         }
       }
 
-      if (game.mode === 'race' && game.phase !== 'over') {
-        game.ghosts.forEach((g) => {
-          if (now - g.heardAt > STALE_MS) g.alive = false;
-          // Extrapolate between network updates so other racers move smoothly.
-          if (g.alive && game.phase === 'running') g.d += speedAt(g.d) * dt;
-        });
-        if (now - game.lastSent > STATE_INTERVAL_MS) sendState(now);
-        if (game.phase === 'running' && !r.alive && Array.from(game.ghosts.values()).every((g) => !g.alive)) {
-          finishRace();
-        }
+      game.ghosts.forEach((g, id) => {
+        if (now - g.heardAt > FORGET_MS) game.ghosts.delete(id);
+        else if (now - g.heardAt > STALE_MS) g.alive = false;
+        // Extrapolate between network updates so other players move smoothly.
+        else if (g.alive && g.go) g.d += speedAt(g.d) * dt;
+      });
+
+      const playing = game.phase === 'countdown' || game.phase === 'running';
+      if (playing && game.runner.alive && now - game.lastSent > STATE_INTERVAL_MS) sendState(now);
+      if (game.mode === 'race' && game.phase === 'running' && !r.alive && racers().every((g) => !g.alive)) {
+        finishRace();
       }
       syncStatus();
     };
@@ -387,7 +414,8 @@ const RunnerGame: React.FC = () => {
     const loop = (now: number) => {
       const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 0;
       last = now;
-      const active = game.phase === 'countdown' || game.phase === 'running';
+      // Keep animating while we play, or while other players are on screen.
+      const active = game.phase === 'countdown' || game.phase === 'running' || game.ghosts.size > 0;
       if (visible && active) {
         tick(dt, now);
         draw();
@@ -407,9 +435,9 @@ const RunnerGame: React.FC = () => {
       Object.assign(game, {
         phase: 'running',
         mode: 'solo',
-        runner: newRunner(randomSeed()),
+        runner: newRunner(courseSeed()),
+        seed: courseSeed(),
         raceId: null,
-        ghosts: new Map(),
         results: null,
       });
       syncStatus();
@@ -421,9 +449,9 @@ const RunnerGame: React.FC = () => {
         phase: 'countdown',
         mode: 'race',
         runner: newRunner(seed),
+        seed,
         raceId,
         countdownEnd: performance.now() + COUNTDOWN_MS,
-        ghosts: new Map(),
         results: null,
         lastSent: 0,
       });
@@ -434,7 +462,7 @@ const RunnerGame: React.FC = () => {
     startRaceRef.current = () => {
       if (!transport || statusOf() !== 'idle') return;
       const raceId = Math.random().toString(36).slice(2, 10);
-      const seed = randomSeed();
+      const seed = courseSeed();
       transport.send({ t: 'race', raceId, seed, from: me.id });
       beginRace(raceId, seed);
       stage.focus();
@@ -445,10 +473,12 @@ const RunnerGame: React.FC = () => {
         // Join automatically unless we're busy playing or not looking at the game.
         if (statusOf() !== 'idle' || !visible) return;
         beginRace(msg.raceId, msg.seed);
-      } else if (msg.t === 'state' && msg.raceId === game.raceId && msg.id !== me.id) {
+      } else if (msg.t === 'state' && msg.id !== me.id) {
         const known = game.ghosts.get(msg.id);
         const color = known?.color ?? lobby.find((p) => p.id === msg.id)?.color ?? colorFor(msg.id);
-        game.ghosts.set(msg.id, { id: msg.id, color, y: msg.y, d: msg.d, alive: msg.alive, heardAt: performance.now() });
+        const { seed, raceId, y, d, alive, go } = msg;
+        game.ghosts.set(msg.id, { id: msg.id, color, seed, raceId, y, d, alive, go, heardAt: performance.now() });
+        startLoop();
       }
     };
 

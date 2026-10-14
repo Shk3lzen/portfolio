@@ -14,7 +14,8 @@ export interface PeerMeta {
 
 export type NetMessage =
   | { t: 'race'; raceId: string; seed: number; from: string }
-  | { t: 'state'; raceId: string; id: string; y: number; d: number; alive: boolean };
+  // Sent by anyone playing. raceId is null outside races; go is false during a race countdown.
+  | { t: 'state'; id: string; seed: number; raceId: string | null; y: number; d: number; alive: boolean; go: boolean };
 
 export interface Transport {
   update(meta: PeerMeta): void;
