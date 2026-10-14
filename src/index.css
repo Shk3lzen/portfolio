@@ -37,9 +37,12 @@
   --overlay: rgba(15, 23, 42, 0.4);
 }
 
+/* The page colour lives on <html> only, so the fixed background bots (z-index -1) show
+   through <body> and the transparent page containers. */
 html {
   scroll-behavior: smooth;
   background-color: var(--bg);
+  transition: background-color 0.3s ease;
 }
 
 body {
@@ -52,8 +55,7 @@ body {
   font-size: 16px;
   line-height: 1.6;
   color: var(--text);
-  background-color: var(--bg);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition: color 0.3s ease;
 }
 
 ::selection {

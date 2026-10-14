@@ -111,19 +111,11 @@ const Archive = () => {
   );
 };
 
+// Transparent: the page colour comes from <body>, so the background bots can show through.
 const PageContainer = styled(motion.div)`
-  background-color: var(--bg);
   min-height: 100vh;
   position: relative;
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-
-  &::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background: var(--bg);
-    z-index: -1;
-  }
 `;
 
 const MouseSpotlight = styled.div`

@@ -231,8 +231,8 @@ const Home = () => {
   );
 };
 
+// Transparent: the page colour comes from <body>, so the background bots can show through.
 const AppContainer = styled(motion.div)`
-  background-color: var(--bg);
   min-height: 100vh;
   display: flex;
   max-width: 1200px;
@@ -244,17 +244,6 @@ const AppContainer = styled(motion.div)`
   @media (max-width: 768px) {
     flex-direction: column;
     padding: 0 25px;
-  }
-
-  &::before {
-    content: '';
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: var(--bg);
-    z-index: -1;
   }
 `;
 

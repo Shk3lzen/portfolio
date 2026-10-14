@@ -7,6 +7,7 @@ import { ThemeProvider } from './theme/ThemeContext';
 import Toolbar from './components/Toolbar';
 import CommandPalette from './components/CommandPalette';
 import Intro from './components/Intro';
+import BackgroundBots from './components/BackgroundBots';
 
 // Routes wrapped so each page can animate in/out on navigation.
 const AnimatedRoutes = () => {
@@ -26,6 +27,7 @@ const AnimatedRoutes = () => {
 const App = () => (
   <ThemeProvider>
     <HashRouter>
+      <BackgroundBots />
       <Toolbar />
       <AnimatedRoutes />
       <CommandPalette />
