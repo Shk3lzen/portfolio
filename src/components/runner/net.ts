@@ -1,9 +1,10 @@
 // Multiplayer plumbing for the runner. Players find each other through a shared lobby
-// (presence) and exchange small broadcast messages. Uses Supabase Realtime when
-// REACT_APP_SUPABASE_URL / REACT_APP_SUPABASE_ANON_KEY are set. Otherwise, in development it
-// tries the local relay (`npm run relay`, connects any browsers on this machine/network), and
-// finally a BroadcastChannel, which only connects tabs of the same browser.
-// Nothing is stored server-side and no IP addresses are shared between players.
+// (presence emulated with heartbeats) and exchange small messages over a "pipe":
+//   1. in development, the local relay (`npm run relay`) if it's running;
+//   2. a free public MQTT broker over secure WebSockets (EMQX, else HiveMQ) — no account needed;
+//   3. a BroadcastChannel, which only connects tabs of the same browser.
+// The public broker is open to anyone, so every incoming message is validated and anything
+// malformed is dropped. Only ids, colours and positions are sent; never IP addresses.
 
 export type PlayerStatus = 'idle' | 'solo' | 'race';
 
@@ -30,8 +31,11 @@ export interface TransportHandlers {
 }
 
 const LOBBY = 'runner-lobby';
-const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
-const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY;
+// Everyone tries the same broker first so they meet; the second is for networks that block it.
+const MQTT_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+// Separate channels so local development never mixes with visitors on the live site.
+const MQTT_TOPIC = `shkelzzen.xyz/runner/v1/${process.env.NODE_ENV === 'production' ? 'live' : 'dev'}`;
+const MAX_PEERS = 24;
 
 // A random per-device id kept in localStorage, so each computer/phone keeps its own colour.
 export const getDeviceId = () => {
@@ -53,48 +57,39 @@ export const colorFor = (id: string) => {
   return `hsl(${Math.abs(hash) % 360}, 80%, 58%)`;
 };
 
-const connectSupabase = async (
-  me: PeerMeta,
-  handlers: TransportHandlers,
-  url: string,
-  key: string
-): Promise<Transport> => {
-  // Loaded on demand so the realtime client stays out of the main bundle.
-  const { createClient } = await import('@supabase/supabase-js');
-  const client = createClient(url, key, { realtime: { params: { eventsPerSecond: 20 } } });
-  const channel = client.channel(LOBBY, {
-    config: { presence: { key: me.id }, broadcast: { self: false } },
-  });
-  let current = me;
+// ---- validation (messages from a public channel are untrusted) -------------------------
 
-  channel
-    .on('presence', { event: 'sync' }, () => {
-      const state = channel.presenceState<PeerMeta>();
-      const peers = Object.values(state)
-        .map((entries) => entries[entries.length - 1])
-        .filter((p): p is PeerMeta & { presence_ref: string } => !!p && p.id !== current.id);
-      handlers.onPeers(peers.map(({ id, color, status }) => ({ id, color, status })));
-    })
-    .on('broadcast', { event: 'msg' }, ({ payload }) => handlers.onMessage(payload as NetMessage))
-    .subscribe((status) => {
-      if (status === 'SUBSCRIBED') channel.track(current);
-    });
+const isId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v);
+const isNum = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
+const isColor = (v: unknown): v is string => typeof v === 'string' && /^hsl\(\d{1,3}, 80%, 58%\)$/.test(v);
+const STATUSES: PlayerStatus[] = ['idle', 'solo', 'race'];
 
-  return {
-    update(meta) {
-      current = meta;
-      channel.track(meta);
-    },
-    send(msg) {
-      channel.send({ type: 'broadcast', event: 'msg', payload: msg });
-    },
-    close() {
-      client.removeChannel(channel);
-    },
-  };
+const parseMeta = (v: any): PeerMeta | null =>
+  v && isId(v.id) && isColor(v.color) && STATUSES.includes(v.status) ? { id: v.id, color: v.color, status: v.status } : null;
+
+const parseMessage = (v: any): NetMessage | null => {
+  if (!v) return null;
+  if (v.t === 'race' && isId(v.raceId) && isNum(v.seed, 2 ** 32) && isId(v.from)) {
+    return { t: 'race', raceId: v.raceId, seed: v.seed, from: v.from };
+  }
+  if (
+    v.t === 'state' &&
+    isId(v.id) &&
+    isNum(v.seed, 2 ** 32) &&
+    (v.raceId === null || isId(v.raceId)) &&
+    isNum(v.y, 500) &&
+    isNum(v.d, 1e7) &&
+    typeof v.alive === 'boolean' &&
+    typeof v.go === 'boolean'
+  ) {
+    const { id, seed, raceId, y, d, alive, go } = v;
+    return { t: 'state', id, seed, raceId, y, d, alive, go };
+  }
+  return null;
 };
 
-// A dumb message pipe: everything sent reaches every *other* participant.
+// ---- pipes: everything posted reaches every *other* participant -------------------------
+
 interface Pipe {
   post(data: unknown): void;
   listen(handler: (data: any) => void): void;
@@ -131,12 +126,64 @@ const relayPipe = (url: string): Promise<Pipe | null> =>
       resolve({
         post: (data) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify(data)),
         listen: (handler) => {
-          ws.onmessage = ({ data }) => handler(JSON.parse(String(data)));
+          ws.onmessage = ({ data }) => {
+            try {
+              handler(JSON.parse(String(data)));
+            } catch {
+              /* ignore junk */
+            }
+          };
         },
         close: () => ws.close(),
       });
     };
   });
+
+// Resolves once subscribed to the public broker, or null if it can't be reached.
+const mqttPipe = async (url: string): Promise<Pipe | null> => {
+  // Loaded on demand so the MQTT client stays out of the main bundle.
+  // The browser build only has a default export, though the (Node) typings show named ones.
+  const mqtt = await import('mqtt');
+  const connect = mqtt.connect ?? (mqtt as unknown as { default: typeof mqtt }).default.connect;
+  const pipeId = Math.random().toString(36).slice(2, 10);
+  const client = connect(url, { protocolVersion: 5, connectTimeout: 4000, reconnectPeriod: 3000 });
+  let handler: (data: any) => void = () => {};
+
+  client.on('message', (_topic, payload) => {
+    if (payload.length > 1024) return;
+    try {
+      const { from, data } = JSON.parse(payload.toString());
+      if (from !== pipeId) handler(data);
+    } catch {
+      /* ignore junk */
+    }
+  });
+
+  return new Promise((resolve) => {
+    const fail = () => {
+      client.end(true);
+      resolve(null);
+    };
+    const timer = window.setTimeout(fail, 5000);
+    client.once('connect', () => {
+      // noLocal: the broker doesn't echo our own messages back (we also filter by pipeId).
+      client.subscribe(MQTT_TOPIC, { qos: 0, nl: true }, (err) => {
+        window.clearTimeout(timer);
+        if (err) {
+          fail();
+          return;
+        }
+        resolve({
+          post: (data) => client.publish(MQTT_TOPIC, JSON.stringify({ from: pipeId, data }), { qos: 0 }),
+          listen: (h) => {
+            handler = h;
+          },
+          close: () => client.end(true),
+        });
+      });
+    });
+  });
+};
 
 // Presence emulated over a pipe with heartbeats that expire.
 const pipeTransport = (pipe: Pipe, me: PeerMeta, handlers: TransportHandlers): Transport => {
@@ -147,16 +194,22 @@ const pipeTransport = (pipe: Pipe, me: PeerMeta, handlers: TransportHandlers): T
   const hello = () => pipe.post({ kind: 'hello', meta: current });
 
   pipe.listen((data) => {
+    if (!data || typeof data !== 'object') return;
     if (data.kind === 'hello') {
-      const known = peers.has(data.meta.id);
-      peers.set(data.meta.id, { meta: data.meta, seen: Date.now() });
+      const meta = parseMeta(data.meta);
+      if (!meta || meta.id === current.id) return;
+      const known = peers.has(meta.id);
+      if (!known && peers.size >= MAX_PEERS) return;
+      peers.set(meta.id, { meta, seen: Date.now() });
       if (!known) hello(); // let newcomers see us right away
       emitPeers();
-    } else if (data.kind === 'bye') {
-      peers.delete(data.id);
-      emitPeers();
+    } else if (data.kind === 'bye' && isId(data.id)) {
+      if (peers.delete(data.id)) emitPeers();
     } else if (data.kind === 'msg') {
-      handlers.onMessage(data.msg);
+      const msg = parseMessage(data.msg);
+      // Only accept messages from players we know about (they said hello first).
+      const sender = msg && (msg.t === 'race' ? msg.from : msg.id);
+      if (msg && sender && peers.has(sender)) handlers.onMessage(msg);
     }
   });
 
@@ -191,17 +244,13 @@ const pipeTransport = (pipe: Pipe, me: PeerMeta, handlers: TransportHandlers): T
 };
 
 export const connect = async (me: PeerMeta, handlers: TransportHandlers): Promise<Transport | null> => {
-  if (SUPABASE_URL && SUPABASE_KEY) {
-    try {
-      return await connectSupabase(me, handlers, SUPABASE_URL, SUPABASE_KEY);
-    } catch {
-      /* fall through to local-only play */
-    }
-  }
+  let pipe: Pipe | null = null;
   if (process.env.NODE_ENV === 'development') {
-    const relay = await relayPipe(`ws://${window.location.hostname}:8787`);
-    if (relay) return pipeTransport(relay, me, handlers);
+    pipe = await relayPipe(`ws://${window.location.hostname}:8787`);
   }
-  const local = broadcastChannelPipe();
-  return local && pipeTransport(local, me, handlers);
+  for (const url of MQTT_BROKERS) {
+    if (!pipe) pipe = await mqttPipe(url).catch(() => null);
+  }
+  if (!pipe) pipe = broadcastChannelPipe();
+  return pipe && pipeTransport(pipe, me, handlers);
 };

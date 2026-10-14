@@ -482,16 +482,23 @@ const RunnerGame: React.FC = () => {
       }
     };
 
-    connect({ ...me, status: 'idle' }, {
-      onPeers: (list) => {
-        lobby = list;
-        setPeers(list);
-      },
-      onMessage: onNetMessage,
-    }).then((t) => {
-      if (closed) t?.close();
-      else transport = t;
-    });
+    // Join the lobby the first time the game scrolls into view, so visitors who never reach
+    // it don't download the network client or connect at all.
+    let joined = false;
+    const join = () => {
+      if (joined) return;
+      joined = true;
+      connect({ ...me, status: statusOf() }, {
+        onPeers: (list) => {
+          lobby = list;
+          setPeers(list);
+        },
+        onMessage: onNetMessage,
+      }).then((t) => {
+        if (closed) t?.close();
+        else transport = t;
+      });
+    };
 
     // ---- input ------------------------------------------------------------------------
 
@@ -519,6 +526,7 @@ const RunnerGame: React.FC = () => {
     // Pause when scrolled out of view or the tab is hidden; resume on return.
     const observer = new IntersectionObserver(([entry]) => {
       visible = entry.isIntersecting && !document.hidden;
+      if (entry.isIntersecting) join();
       if (visible) startLoop();
     });
     observer.observe(stage);

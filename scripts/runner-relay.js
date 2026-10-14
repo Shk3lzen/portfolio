@@ -1,6 +1,6 @@
 // Local development relay for the runner game's multiplayer. Forwards every message to all
 // other connected browsers, so different browsers (or a phone on the same Wi-Fi) can play
-// together on localhost without Supabase. Not used in production.
+// together on localhost without the internet. Not used in production.
 //
 //   npm run relay
 
