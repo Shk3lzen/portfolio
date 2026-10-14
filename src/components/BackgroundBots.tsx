@@ -29,7 +29,7 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 const spawn = (width: number, height: number, anywhere: boolean): Bot => {
   const dir = Math.random() < 0.5 ? 1 : -1;
-  const pixel = Math.round(rand(3, 5));
+  const pixel = Math.round(rand(3, 4));
   const w = SPRITE_W * pixel;
   return {
     // New bots walk in from the edge they're heading away from; the first batch is scattered.
@@ -40,7 +40,7 @@ const spawn = (width: number, height: number, anywhere: boolean): Bot => {
     dir,
     speed: rand(16, 42),
     pixel,
-    color: `hsla(${Math.floor(rand(0, 360))}, 75%, 60%, ${rand(0.1, 0.2).toFixed(2)})`,
+    color: `hsla(${Math.floor(rand(0, 360))}, 75%, 60%, ${rand(0.04, 0.08).toFixed(3)})`,
     nextHop: rand(2, 8),
     cooldown: 0,
   };
@@ -72,8 +72,8 @@ const BackgroundBots: React.FC = () => {
       canvas.width = width * dpr;
       canvas.height = height * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // Roughly one bot per 220px of width, 4–8 in total.
-      const count = Math.max(4, Math.min(8, Math.round(width / 220)));
+      // Roughly one bot per 300px of width, 3–6 in total.
+      const count = Math.max(3, Math.min(6, Math.round(width / 300)));
       while (bots.length < count) bots.push(spawn(width, height, true));
       bots = bots.slice(0, count);
       bots.forEach((b) => (b.baseY = Math.min(b.baseY, height * 0.95)));
