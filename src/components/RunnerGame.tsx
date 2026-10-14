@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FiPlay, FiFlag } from 'react-icons/fi';
+import { FiPlay, FiFlag, FiAward } from 'react-icons/fi';
 import {
   HEIGHT,
   GROUND_Y,
@@ -31,7 +31,9 @@ import {
   PeerMeta,
   PlayerStatus,
   Transport,
+  todayKey,
 } from './runner/net';
+import { BoardState, Leaderboard, openLeaderboard, TOP_N } from './runner/leaderboard';
 
 // A tiny endless runner: a pixel invader hops over posts and dodges drones.
 // Space / ↑ / click / tap to jump, hold for a higher jump, press again mid-air to double jump.
@@ -104,7 +106,7 @@ const saveHighScore = (score: number) => {
 const pad = (n: number) => String(Math.min(n, 99999)).padStart(4, '0');
 // One course per UTC day, shared by every visitor.
 const courseSeed = () => {
-  const day = new Date().toISOString().slice(0, 10);
+  const day = todayKey();
   let hash = 0;
   for (let i = 0; i < day.length; i++) hash = (hash * 31 + day.charCodeAt(i)) | 0;
   return hash >>> 0;
@@ -118,6 +120,8 @@ const RunnerGame: React.FC = () => {
   const drawRef = useRef<() => void>(() => {});
   const startRaceRef = useRef<() => void>(() => {});
   const announceRef = useRef<() => void>(() => {});
+  const leaderboardRef = useRef<Leaderboard | null>(null);
+  const [board, setBoard] = useState<BoardState | null>(null);
   // Colour and name are per device; the id is per tab so two tabs on one computer can still race.
   const [me] = useState(() => {
     const deviceId = getDeviceId();
@@ -404,6 +408,7 @@ const RunnerGame: React.FC = () => {
 
     const recordScore = () => {
       const score = scoreOf(game.runner.distance);
+      leaderboardRef.current?.report(score);
       if (score > game.highScore) {
         game.highScore = score;
         saveHighScore(score);
@@ -525,6 +530,7 @@ const RunnerGame: React.FC = () => {
     const join = () => {
       if (joined) return;
       joined = true;
+      leaderboardRef.current = openLeaderboard({ deviceId: me.deviceId, name: nameRef.current, color: me.color }, setBoard);
       connect(myMeta(), {
         onPeers: (list) => {
           lobby = new Map(list.map((p) => [p.id, p]));
@@ -586,6 +592,8 @@ const RunnerGame: React.FC = () => {
     return () => {
       closed = true;
       transport?.close();
+      leaderboardRef.current?.close();
+      leaderboardRef.current = null;
       cancelAnimationFrame(frame);
       observer.disconnect();
       resizeObserver.disconnect();
@@ -608,6 +616,7 @@ const RunnerGame: React.FC = () => {
     nameRef.current = next;
     saveName(next);
     announceRef.current();
+    leaderboardRef.current?.setIdentity(next, me.color);
   };
 
   return (
@@ -656,6 +665,35 @@ const RunnerGame: React.FC = () => {
           </>
         )}
       </Lobby>
+      <Board aria-labelledby="runner-board-title">
+        <BoardTitle id="runner-board-title">
+          <FiAward aria-hidden="true" />
+          Today&apos;s top {TOP_N}
+          <BoardNote>resets 00:00 UTC</BoardNote>
+        </BoardTitle>
+        {board === null ? (
+          <BoardNote as="p">Loading…</BoardNote>
+        ) : board.entries.length === 0 ? (
+          <BoardNote as="p">No scores yet today. Set the first one!</BoardNote>
+        ) : (
+          <BoardList>
+            {board.entries.map((entry, i) => (
+              <BoardRow key={entry.deviceId} $mine={entry.deviceId === me.deviceId}>
+                <span>{i + 1}</span>
+                <Dot style={{ background: entry.color }} aria-hidden="true" />
+                <BoardName>{entry.name}</BoardName>
+                <span>{pad(entry.score)}</span>
+              </BoardRow>
+            ))}
+          </BoardList>
+        )}
+        {board && board.mine > 0 && !board.entries.some((e) => e.deviceId === me.deviceId) && (
+          <BoardNote as="p">Your best today: {pad(board.mine)}</BoardNote>
+        )}
+        {board && !board.shared && (
+          <BoardNote as="p">Couldn&apos;t reach the shared board, so this shows this device only.</BoardNote>
+        )}
+      </Board>
     </Wrapper>
   );
 };
@@ -747,6 +785,67 @@ const Dot = styled.span`
 const LobbyText = styled.span`
   flex: 1;
   min-width: 0;
+`;
+
+const Board = styled.section`
+  margin-top: 24px;
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+`;
+
+const BoardTitle = styled.h4`
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--heading);
+  margin-bottom: 10px;
+
+  svg {
+    align-self: center;
+    color: var(--accent);
+  }
+`;
+
+const BoardNote = styled.span`
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text);
+  margin-top: 6px;
+`;
+
+const BoardList = styled.ol`
+  list-style: none;
+  margin: 0;
+  padding: 0;
+`;
+
+const BoardRow = styled.li<{ $mine: boolean }>`
+  display: grid;
+  grid-template-columns: 2.5ch 10px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  color: ${({ $mine }) => ($mine ? 'var(--heading)' : 'var(--text)')};
+  font-weight: ${({ $mine }) => ($mine ? 600 : 400)};
+  background: ${({ $mine }) => ($mine ? 'rgba(var(--accent-rgb), 0.08)' : 'transparent')};
+
+  &:nth-child(-n + 3) > span:first-child {
+    color: var(--accent);
+  }
+`;
+
+const BoardName = styled.span`
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 `;
 
 const RaceButton = styled.button`

@@ -6,6 +6,8 @@
 // The public broker is open to anyone, so every incoming message is validated and anything
 // malformed is dropped. Only ids, names, colours and positions are sent; never IP addresses.
 
+import type { MqttClient } from 'mqtt';
+
 export type PlayerStatus = 'idle' | 'solo' | 'race';
 
 export interface PeerMeta {
@@ -35,7 +37,11 @@ const LOBBY = 'runner-lobby';
 // Everyone tries the same broker first so they meet; the second is for networks that block it.
 const MQTT_BROKERS = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
 // Separate channels so local development never mixes with visitors on the live site.
-const MQTT_TOPIC = `shkelzzen.xyz/runner/v1/${process.env.NODE_ENV === 'production' ? 'live' : 'dev'}`;
+export const TOPIC_BASE = `shkelzzen.xyz/runner/v1/${process.env.NODE_ENV === 'production' ? 'live' : 'dev'}`;
+const LOBBY_TOPIC = TOPIC_BASE;
+
+// Today's date in UTC (YYYY-MM-DD): the course and the leaderboard both reset daily.
+export const todayKey = () => new Date().toISOString().slice(0, 10);
 const MAX_PEERS = 24;
 
 // A random per-device id kept in localStorage, so each computer/phone keeps its own colour.
@@ -101,12 +107,12 @@ export const saveName = (name: string) => {
 
 // ---- validation (messages from a public channel are untrusted) -------------------------
 
-const isId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v);
-const isNum = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
-const isColor = (v: unknown): v is string => typeof v === 'string' && /^hsl\(\d{1,3}, 80%, 58%\)$/.test(v);
+export const isId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v);
+export const isNum = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
+export const isColor = (v: unknown): v is string => typeof v === 'string' && /^hsl\(\d{1,3}, 80%, 58%\)$/.test(v);
 const STATUSES: PlayerStatus[] = ['idle', 'solo', 'race'];
 
-const isName = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && cleanName(v) === v;
+export const isName = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && cleanName(v) === v;
 
 const parseMeta = (v: any): PeerMeta | null =>
   v && isId(v.id) && isName(v.name) && isColor(v.color) && STATUSES.includes(v.status)
@@ -185,47 +191,92 @@ const relayPipe = (url: string): Promise<Pipe | null> =>
     };
   });
 
-// Resolves once subscribed to the public broker, or null if it can't be reached.
-const mqttPipe = async (url: string): Promise<Pipe | null> => {
+// ---- shared public-broker connection ---------------------------------------------------
+// One MQTT connection per page, shared by the lobby and the leaderboard and closed when
+// neither needs it. Resolves to null if no broker can be reached.
+
+let broker: Promise<MqttClient | null> | null = null;
+let brokerUsers = 0;
+
+const tryBroker = async (url: string): Promise<MqttClient | null> => {
   // Loaded on demand so the MQTT client stays out of the main bundle.
   // The browser build only has a default export, though the (Node) typings show named ones.
   const mqtt = await import('mqtt');
-  const connect = mqtt.connect ?? (mqtt as unknown as { default: typeof mqtt }).default.connect;
-  const pipeId = Math.random().toString(36).slice(2, 10);
-  const client = connect(url, { protocolVersion: 5, connectTimeout: 4000, reconnectPeriod: 3000 });
-  let handler: (data: any) => void = () => {};
+  const connectMqtt = mqtt.connect ?? (mqtt as unknown as { default: typeof mqtt }).default.connect;
+  const client = connectMqtt(url, { protocolVersion: 5, connectTimeout: 4000, reconnectPeriod: 3000 });
+  client.setMaxListeners(20);
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      client.end(true);
+      resolve(null);
+    }, 5000);
+    client.once('connect', () => {
+      window.clearTimeout(timer);
+      resolve(client);
+    });
+  });
+};
 
-  client.on('message', (_topic, payload) => {
-    if (payload.length > 1024) return;
+export const acquireBroker = (): Promise<MqttClient | null> => {
+  brokerUsers += 1;
+  if (!broker) {
+    broker = (async () => {
+      for (const url of MQTT_BROKERS) {
+        const client = await tryBroker(url).catch(() => null);
+        if (client) return client;
+      }
+      return null;
+    })();
+  }
+  return broker;
+};
+
+export const releaseBroker = () => {
+  brokerUsers -= 1;
+  if (brokerUsers > 0 || !broker) return;
+  const closing = broker;
+  broker = null;
+  closing.then((client) => client?.end(true));
+};
+
+// Resolves once subscribed to the lobby on the public broker, or null if it can't be reached.
+const mqttPipe = async (): Promise<Pipe | null> => {
+  const client = await acquireBroker();
+  if (!client) {
+    releaseBroker();
+    return null;
+  }
+  const pipeId = Math.random().toString(36).slice(2, 10);
+  let handler: (data: any) => void = () => {};
+  const onMessage = (topic: string, payload: Uint8Array) => {
+    if (topic !== LOBBY_TOPIC || payload.length > 1024) return;
     try {
-      const { from, data } = JSON.parse(payload.toString());
+      const { from, data } = JSON.parse(new TextDecoder().decode(payload));
       if (from !== pipeId) handler(data);
     } catch {
       /* ignore junk */
     }
-  });
+  };
 
   return new Promise((resolve) => {
-    const fail = () => {
-      client.end(true);
-      resolve(null);
-    };
-    const timer = window.setTimeout(fail, 5000);
-    client.once('connect', () => {
-      // noLocal: the broker doesn't echo our own messages back (we also filter by pipeId).
-      client.subscribe(MQTT_TOPIC, { qos: 0, nl: true }, (err) => {
-        window.clearTimeout(timer);
-        if (err) {
-          fail();
-          return;
-        }
-        resolve({
-          post: (data) => client.publish(MQTT_TOPIC, JSON.stringify({ from: pipeId, data }), { qos: 0 }),
-          listen: (h) => {
-            handler = h;
-          },
-          close: () => client.end(true),
-        });
+    // noLocal: the broker doesn't echo our own messages back (we also filter by pipeId).
+    client.subscribe(LOBBY_TOPIC, { qos: 0, nl: true }, (err) => {
+      if (err) {
+        releaseBroker();
+        resolve(null);
+        return;
+      }
+      client.on('message', onMessage);
+      resolve({
+        post: (data) => client.publish(LOBBY_TOPIC, JSON.stringify({ from: pipeId, data }), { qos: 0 }),
+        listen: (h) => {
+          handler = h;
+        },
+        close: () => {
+          client.off('message', onMessage);
+          client.unsubscribe(LOBBY_TOPIC);
+          releaseBroker();
+        },
       });
     });
   });
@@ -294,9 +345,7 @@ export const connect = async (me: PeerMeta, handlers: TransportHandlers): Promis
   if (process.env.NODE_ENV === 'development') {
     pipe = await relayPipe(`ws://${window.location.hostname}:8787`);
   }
-  for (const url of MQTT_BROKERS) {
-    if (!pipe) pipe = await mqttPipe(url).catch(() => null);
-  }
+  if (!pipe) pipe = await mqttPipe().catch(() => null);
   if (!pipe) pipe = broadcastChannelPipe();
   return pipe && pipeTransport(pipe, me, handlers);
 };
