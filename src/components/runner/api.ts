@@ -1,6 +1,5 @@
 // Client for the runner's score server (worker/ — a Cloudflare Worker). Set REACT_APP_RUNNER_API
-// to its URL at build time to turn it on; without it the game keeps the peer-to-peer daily board
-// and shares a plain link to the site.
+// to its URL at build time to turn it on; without it the game keeps the peer-to-peer daily board.
 
 import { isColor, isName, isNum } from './rules';
 import { isTape } from './tape';
@@ -8,7 +7,6 @@ import { isTape } from './tape';
 export const RUNNER_API = (process.env.REACT_APP_RUNNER_API ?? '').replace(/\/$/, '');
 export const apiEnabled = RUNNER_API !== '';
 
-const SITE_URL = 'https://shkelzzen.xyz/';
 const MAX_SCORE = 99999;
 
 export type BoardScope = 'today' | 'all';
@@ -66,10 +64,6 @@ export const fetchRun = async (id: string): Promise<ChallengeRun | null> => {
   if (!v || !isName(v.name) || !isColor(v.color) || !isNum(v.score, MAX_SCORE) || typeof v.day !== 'string') return null;
   return { id, day: v.day, name: v.name, color: v.color, score: v.score, tape: isTape(v.tape) ? v.tape : null };
 };
-
-// The link people share: the server's share page (with a preview image of this score) when
-// there's a recorded run, otherwise the site itself.
-export const shareUrlFor = (runId: string | null) => (apiEnabled && runId ? `${RUNNER_API}/s/${runId}` : SITE_URL);
 
 // ?run=<id> from a share link, if present.
 export const challengeIdFromUrl = () => {

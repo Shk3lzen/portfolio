@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FiPlay, FiFlag, FiAward, FiShare2, FiCheck } from 'react-icons/fi';
+import { FiPlay, FiFlag, FiAward } from 'react-icons/fi';
 import {
   HEIGHT,
   GROUND_Y,
@@ -34,7 +34,7 @@ import {
   todayKey,
 } from './runner/net';
 import { BoardState, Leaderboard, openApiLeaderboard, openLeaderboard, TOP_N } from './runner/leaderboard';
-import { BoardScope, ChallengeRun, apiEnabled, challengeIdFromUrl, fetchRun, shareUrlFor, submitRun } from './runner/api';
+import { BoardScope, ChallengeRun, apiEnabled, challengeIdFromUrl, fetchRun, submitRun } from './runner/api';
 import { PRESS, RELEASE, createTapePlayer, dtToUnits, quantizeDt, seedForDay } from './runner/tape';
 import { SPRITE_FRAMES } from './runner/sprite';
 
@@ -43,7 +43,7 @@ import { SPRITE_FRAMES } from './runner/sprite';
 // Everyone plays the same course each day, so other visitors' bots show up alongside yours;
 // the Race button lines everyone up for a synchronised start.
 // Solo runs are recorded as tapes (see runner/tape.ts): with the score server on, each finished
-// run is submitted, replayed there, and can be shared; a shared link plays that run as a ghost.
+// run is submitted and replayed there; a share link (?run=<id>) plays that run as a ghost.
 
 const HIGH_SCORE_KEY = 'runner-high-score';
 const COUNTDOWN_MS = 3000;
@@ -93,9 +93,7 @@ interface Game {
 
 interface FinishedRun {
   score: number;
-  runId: string | null;
-  rank: number | null;
-  pending: boolean;
+  rank: number | null; // today's rank, once the score server has confirmed the run
 }
 
 const readHighScore = () => {
@@ -130,7 +128,6 @@ const RunnerGame: React.FC = () => {
   const [board, setBoard] = useState<BoardState | null>(null);
   const [boardScope, setBoardScope] = useState<BoardScope>('today');
   const [lastRun, setLastRun] = useState<FinishedRun | null>(null);
-  const [shareNote, setShareNote] = useState('');
   const [challenge, setChallenge] = useState<ChallengeRun | null>(null);
   const challengeRef = useRef<ChallengeRun | null>(null);
   // Colour and name are per device; the id is per tab so two tabs on one computer can still race.
@@ -432,20 +429,14 @@ const RunnerGame: React.FC = () => {
       if (game.mode !== 'solo' || score <= 0) return;
       const tape = game.tape;
       game.tape = null;
-      setShareNote('');
-      if (!apiEnabled || !tape) {
-        setLastRun({ score, runId: null, rank: null, pending: false });
-        return;
-      }
-      setLastRun({ score, runId: null, rank: null, pending: true });
+      setLastRun({ score, rank: null });
+      if (!apiEnabled || !tape) return;
       submitRun({ day: game.day, deviceId: me.deviceId, name: nameRef.current, color: me.color, tape })
         .then((res) => {
-          setLastRun((cur) => (cur && cur.score === score ? { score, runId: res.id, rank: res.rank, pending: false } : cur));
+          setLastRun((cur) => (cur && cur.score === score ? { score, rank: res.rank } : cur));
           leaderboardRef.current?.refresh?.();
         })
-        .catch(() => {
-          setLastRun((cur) => (cur && cur.score === score ? { ...cur, pending: false } : cur));
-        });
+        .catch(() => {});
     };
 
     const finishRace = () => {
@@ -708,22 +699,6 @@ const RunnerGame: React.FC = () => {
 
   const ready = peers.filter((p) => p.status === 'idle').length;
 
-  const shareText = (score: number) => `I scored ${score} on Shkëlzen's site — can you beat me?`;
-  const share = async () => {
-    if (!lastRun) return;
-    const url = shareUrlFor(lastRun.runId);
-    const text = shareText(lastRun.score);
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Runner · shkelzzen.xyz', text, url });
-        return;
-      }
-      await navigator.clipboard.writeText(`${text} ${url}`);
-      setShareNote('Link copied');
-    } catch (err) {
-      if ((err as Error)?.name !== 'AbortError') setShareNote(`Copy this link: ${url}`);
-    }
-  };
   const today = todayKey();
 
   const commitName = () => {
@@ -795,32 +770,11 @@ const RunnerGame: React.FC = () => {
         )}
       </Lobby>
       {lastRun && (
-        <ShareRow>
-          <ShareText>
-            Score {pad(lastRun.score)}
-            {lastRun.rank !== null && ` · #${lastRun.rank} today`}
-            {challenge && lastRun.score > challenge.score && ` · you beat ${challenge.name}!`}
-          </ShareText>
-          <ShareButton type="button" onClick={share} disabled={lastRun.pending}>
-            <FiShare2 aria-hidden="true" />
-            {lastRun.pending ? 'Saving…' : 'Share'}
-          </ShareButton>
-          <ShareLink
-            href={`https://x.com/intent/tweet?text=${encodeURIComponent(shareText(lastRun.score))}&url=${encodeURIComponent(
-              shareUrlFor(lastRun.runId)
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-disabled={lastRun.pending}
-          >
-            Post on X
-          </ShareLink>
-          {shareNote && (
-            <ShareText role="status">
-              {shareNote === 'Link copied' && <FiCheck aria-hidden="true" />} {shareNote}
-            </ShareText>
-          )}
-        </ShareRow>
+        <ResultText>
+          Score {pad(lastRun.score)}
+          {lastRun.rank !== null && ` · #${lastRun.rank} today`}
+          {challenge && lastRun.score > challenge.score && ` · you beat ${challenge.name}!`}
+        </ResultText>
       )}
       <Board aria-labelledby="runner-board-title">
         <BoardHeader>
@@ -1049,62 +1003,11 @@ const ChallengeBanner = styled.p`
   }
 `;
 
-const ShareRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 14px;
+const ResultText = styled.p`
   margin-top: 12px;
   font-family: 'SF Mono', monospace;
   font-size: 12px;
-`;
-
-const ShareText = styled.span`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   color: var(--text);
-`;
-
-const ShareButton = styled.button`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
-  font: inherit;
-  color: var(--bg);
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
-
-  &:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-`;
-
-const ShareLink = styled.a`
-  color: var(--accent);
-
-  &:hover {
-    text-decoration: underline;
-  }
-
-  &[aria-disabled='true'] {
-    opacity: 0.6;
-    pointer-events: none;
-  }
 `;
 
 const ScopeTabs = styled.span`

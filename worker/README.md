@@ -8,10 +8,11 @@ A Cloudflare Worker (with a D1 database) behind the runner game on shkelzzen.xyz
 - **Leaderboards.** Today's top 10 and all-time top 10, best run per device.
 - **Sharing.** `/s/<run>` is a share page with Open Graph tags and a generated 1200×630 preview
   image (`/og/<run>.png`, pixel art drawn and PNG-encoded in the Worker, no dependencies). It
-  forwards people to the site, which loads the run as a challenge and races its ghost.
+  forwards people to the site, which loads the run as a challenge and races its ghost. The game
+  has no share button at the moment, so nothing links here yet; every run's page is ready if one
+  comes back.
 
-Without the Worker the site still works: the game falls back to the peer-to-peer daily board
-and shares a plain link.
+Without the Worker the site still works: the game falls back to the peer-to-peer daily board.
 
 ## Run locally
 
