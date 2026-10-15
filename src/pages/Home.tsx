@@ -7,6 +7,8 @@ import { useMouseSpotlight } from '../hooks/useMouseSpotlight';
 import Reveal from '../components/Reveal';
 import GitHubActivity from '../components/GitHubActivity';
 import RunnerGame from '../components/RunnerGame';
+import Hero from '../components/hero/Hero';
+import { profile } from '../data/profile';
 
 const Home = () => {
   const [activeSection, setActiveSection] = useState('about');
@@ -64,14 +66,7 @@ const Home = () => {
     >
       <MouseSpotlight ref={spotlightRef} />
       <LeftColumn>
-        <Header>
-          <Name>Shkëlzen Berisha</Name>
-          <Title>Full-Stack Software Developer</Title>
-          <Tagline>
-            I build scalable, high-performing web applications and backend systems
-            that power modern digital experiences with cutting-edge technologies.
-          </Tagline>
-        </Header>
+        <Hero onViewProjects={() => scrollToSection('projects')} />
 
         <Navigation>
           <NavItem
@@ -98,8 +93,8 @@ const Home = () => {
         </Navigation>
 
         <SocialLinks>
-          <SocialLink href="https://github.com/Shk3lzen" target="_blank" rel="noopener noreferrer">GitHub</SocialLink>
-          <SocialLink href="https://www.linkedin.com/in/shkelzen-berisha/" target="_blank" rel="noopener noreferrer">LinkedIn</SocialLink>
+          <SocialLink href={profile.github} target="_blank" rel="noopener noreferrer">GitHub</SocialLink>
+          <SocialLink href={profile.linkedin} target="_blank" rel="noopener noreferrer">LinkedIn</SocialLink>
         </SocialLinks>
       </LeftColumn>
 
@@ -107,35 +102,24 @@ const Home = () => {
         <Content>
           <Section id="about">
             <Paragraph>
-              I have over five years of experience creating scalable, high-performing backend systems
-              and web applications, and I am an enthusiastic software developer. With a focus on React.js,
-              Node.js, and contemporary web development frameworks like Next.js and Nest.js, I specialize
-              in developing robust, user-focused solutions that guarantee seamless front-end interface
-              and back-end infrastructure integration.
+              I&apos;m a full-stack developer with over five years of building the backend systems and web
+              applications behind products people use every day. I&apos;m happiest where the hard problems
+              are: APIs that need to stay fast under load, data that has to be right in real time, and
+              infrastructure that scales without anyone noticing.
             </Paragraph>
 
             <Paragraph>
-              Currently, I'm a Software Developer at <Link href="https://www.asendio.io/en" target="_blank" rel="noopener noreferrer">Asendio</Link>, where I design and implement
-              scalable architecture using NestJS and Next.js across multiple client projects. I develop and maintain
-              API frameworks, including REST, GraphQL, and serverless solutions, while building tools and services
-              using AWS technologies such as Lambda, S3, and API Gateway.
+              Right now I&apos;m at <Link href="https://www.asendio.io/en" target="_blank" rel="noopener noreferrer">Asendio</Link>,
+              building an AI-powered learning platform with NestJS and Next.js: REST and GraphQL APIs, plus
+              serverless tooling on AWS Lambda, S3 and API Gateway. Before that I spent four years at Swifty
+              Global shipping sports betting products, where live odds and race data had to be both fast and
+              correct.
             </Paragraph>
 
             <Paragraph>
-              I work best in cooperative settings, collaborating with multidisciplinary groups to produce
-              creative software solutions. I have demonstrated my ability to use cutting-edge technologies
-              like TypeScript, GraphQL, and serverless architectures to create applications that satisfy
-              both technical and business goals. Additionally, I mentor junior developers to improve team
-              productivity and code quality.
+              I work best on small, collaborative teams that ship often, and I mentor junior developers so
+              the whole team writes better code.
             </Paragraph>
-
-            <ContactLink
-              href="https://www.linkedin.com/in/shkelzen-berisha/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Get in touch ↗
-            </ContactLink>
           </Section>
 
           <Section id="experience">
@@ -266,6 +250,11 @@ const LeftColumn = styled.div`
   height: 100vh;
   z-index: 10;
 
+  /* The hero, nav and links must fit one screen, so tighten up on short laptop displays. */
+  @media (min-width: 769px) and (max-height: 820px) {
+    padding: 56px 50px 40px 0;
+  }
+
   @media (max-width: 768px) {
     width: 100%;
     position: static;
@@ -274,52 +263,20 @@ const LeftColumn = styled.div`
   }
 `;
 
-const Header = styled.header`
-  margin-bottom: 30px;
 
-  @media (max-width: 768px) {
-    margin-bottom: 20px;
-  }
-`;
 
-const Name = styled.h1`
-  font-size: 46px;
-  font-weight: 700;
-  color: var(--heading);
-  margin-bottom: 8px;
-  line-height: 1.1;
-  letter-spacing: -0.5px;
 
-  @media (max-width: 768px) {
-    font-size: 36px;
-  }
-`;
-
-const Title = styled.h2`
-  font-size: 24px;
-  font-weight: 400;
-  color: var(--accent);
-  margin-bottom: 20px;
-  line-height: 1.2;
-
-  @media (max-width: 768px) {
-    font-size: 20px;
-  }
-`;
-
-const Tagline = styled.p`
-  font-size: 18px;
-  color: var(--text);
-  line-height: 1.6;
-  max-width: 450px;
-  font-weight: 400;
-`;
 
 const Navigation = styled.nav`
   display: flex;
   flex-direction: column;
   gap: 20px;
-  margin-bottom: 80px;
+  margin-bottom: 64px;
+
+  @media (max-height: 820px) {
+    gap: 14px;
+    margin-bottom: 32px;
+  }
 
   @media (max-width: 768px) {
     display: none;
@@ -382,8 +339,7 @@ const NavText = styled.span.attrs({ className: 'nav-text' })`
 
 const SocialLinks = styled.div`
   display: flex;
-  flex-direction: column;
-  gap: 15px;
+  gap: 24px;
 `;
 
 const SocialLink = styled.a`
@@ -429,30 +385,6 @@ const Link = styled.a`
   }
 `;
 
-const ContactLink = styled.a`
-  display: inline-block;
-  margin-top: 8px;
-  padding: 12px 22px;
-  color: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: 4px;
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: "SF Mono", monospace;
-  letter-spacing: 0.5px;
-  transition: background-color 0.2s, transform 0.2s;
-
-  &:hover {
-    background-color: rgba(var(--accent-rgb), 0.1);
-    transform: translateY(-2px);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 4px;
-  }
-`;
 
 const ExperienceSection = styled.div`
   margin-top: 50px;
