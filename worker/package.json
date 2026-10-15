@@ -1,0 +1,17 @@
+{
+  "name": "shkelzzen-runner-api",
+  "private": true,
+  "description": "Score server for the runner game on shkelzzen.xyz: verifies runs by replaying them, keeps the leaderboard, and serves share pages with generated preview images.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "db:init:local": "wrangler d1 execute shkelzzen-runner --local --file=schema.sql",
+    "db:init": "wrangler d1 execute shkelzzen-runner --remote --file=schema.sql",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261006.1",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.151.0"
+  }
+}

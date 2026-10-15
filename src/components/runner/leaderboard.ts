@@ -1,3 +1,7 @@
+// Leaderboards for the runner. With the score server configured (REACT_APP_RUNNER_API), scores
+// come from it: every run is replayed there before it counts, and there's an all-time board too.
+// Otherwise (below), a daily board kept on the public MQTT broker with no account.
+//
 // Daily leaderboard for the runner, stored on the public MQTT broker with no account.
 // Each device keeps its best score of the day as a *retained* message on its own topic
 // (…/scores/<day>/<deviceId>); subscribing to …/scores/<day>/+ returns every stored entry,
@@ -6,6 +10,7 @@
 // determined could still post a fake score or clear an entry.
 
 import { acquireBroker, releaseBroker, isColor, isId, isName, isNum, todayKey, TOPIC_BASE } from './net';
+import { BoardScope, fetchBoard } from './api';
 
 export interface ScoreEntry {
   deviceId: string;
@@ -17,13 +22,17 @@ export interface ScoreEntry {
 export interface BoardState {
   entries: ScoreEntry[]; // best first, at most TOP_N
   shared: boolean; // false when showing only this device's score (offline fallback)
-  mine: number; // this device's best today (0 if none)
+  mine: number; // this device's best for the board's scope (0 if none)
+  scope: BoardScope;
 }
 
 export interface Leaderboard {
   report(score: number): void;
   setIdentity(name: string, color: string): void;
   close(): void;
+  // Score-server boards only: reload now (e.g. after submitting a run), or switch boards.
+  refresh?(): void;
+  setScope?(scope: BoardScope): void;
 }
 
 export const TOP_N = 10;
@@ -86,9 +95,9 @@ export const openLeaderboard = (
   const emit = () => {
     const mine = myEntry();
     if (client) {
-      onChange({ entries: rank(entries.values()), shared: true, mine: mine?.score ?? 0 });
+      onChange({ entries: rank(entries.values()), shared: true, mine: mine?.score ?? 0, scope: 'today' });
     } else {
-      onChange({ entries: mine ? [mine] : [], shared: false, mine: mine?.score ?? 0 });
+      onChange({ entries: mine ? [mine] : [], shared: false, mine: mine?.score ?? 0, scope: 'today' });
     }
   };
 
@@ -172,6 +181,51 @@ export const openLeaderboard = (
         client = null;
         releaseBroker();
       }
+    },
+  };
+};
+
+const API_POLL_MS = 30_000;
+
+// Board backed by the score server. Runs are submitted with their tape by the game itself
+// (see api.submitRun); this only reads, polling now and then and after each submission.
+export const openApiLeaderboard = (me: { deviceId: string }, onChange: (state: BoardState) => void): Leaderboard => {
+  let scope: BoardScope = 'today';
+  let closed = false;
+  let request = 0;
+
+  const load = async () => {
+    const id = ++request;
+    const forScope = scope;
+    try {
+      const { entries, mine } = await fetchBoard(forScope, me.deviceId);
+      if (!closed && id === request) onChange({ entries, shared: true, mine, scope: forScope });
+    } catch {
+      if (!closed && id === request) onChange({ entries: [], shared: false, mine: readBest(todayKey()), scope: forScope });
+    }
+  };
+
+  load();
+  const timer = window.setInterval(load, API_POLL_MS);
+
+  return {
+    report(score) {
+      // Kept locally too, so the offline fallback still shows your best.
+      const day = todayKey();
+      const s = Math.min(MAX_SCORE, Math.floor(score));
+      if (s > readBest(day)) writeBest(day, s);
+    },
+    setIdentity() {
+      // Names travel with each submitted run.
+    },
+    close() {
+      closed = true;
+      window.clearInterval(timer);
+    },
+    refresh: load,
+    setScope(next) {
+      scope = next;
+      load();
     },
   };
 };
