@@ -14,9 +14,12 @@ import {
   FiLinkedin,
   FiExternalLink,
   FiSearch,
+  FiSend,
+  FiDownload,
 } from 'react-icons/fi';
 import { useTheme } from '../theme/ThemeContext';
 import { projects } from '../data/projects';
+import { profile } from '../data/profile';
 
 interface Command {
   id: string;
@@ -72,9 +75,21 @@ const CommandPalette: React.FC = () => {
         icon: theme === 'dark' ? <FiSun /> : <FiMoon />,
         action: toggle,
       },
-      { id: 'github', title: 'Open GitHub', group: 'Social', keywords: 'code repos', icon: <FiGithub />, action: () => openExternal('https://github.com/Shk3lzen') },
-      { id: 'linkedin', title: 'Open LinkedIn', group: 'Social', keywords: 'contact connect', icon: <FiLinkedin />, action: () => openExternal('https://www.linkedin.com/in/shkelzen-berisha/') },
+      { id: 'contact', title: 'Get in touch', group: 'Contact', keywords: 'hire email message talk', icon: <FiSend />, action: () => openExternal(profile.contactUrl) },
+      { id: 'github', title: 'Open GitHub', group: 'Social', keywords: 'code repos', icon: <FiGithub />, action: () => openExternal(profile.github) },
+      { id: 'linkedin', title: 'Open LinkedIn', group: 'Social', keywords: 'contact connect', icon: <FiLinkedin />, action: () => openExternal(profile.linkedin) },
     ];
+    if (profile.cvUrl) {
+      const cvUrl = profile.cvUrl;
+      base.splice(base.length - 2, 0, {
+        id: 'cv',
+        title: 'Download CV',
+        group: 'Contact',
+        keywords: 'resume pdf',
+        icon: <FiDownload />,
+        action: () => openExternal(cvUrl),
+      });
+    }
 
     const projectCommands: Command[] = projects.map((project) => ({
       id: `project-${project.id}`,
