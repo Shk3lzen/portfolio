@@ -9,6 +9,9 @@ import GitHubActivity from '../components/GitHubActivity';
 import RunnerGame from '../components/RunnerGame';
 import Hero from '../components/hero/Hero';
 import { profile } from '../data/profile';
+import { experience } from '../data/experience';
+import ExperienceCard from '../components/ExperienceCard';
+import ProjectCard from '../components/ProjectCard';
 
 const Home = () => {
   const [activeSection, setActiveSection] = useState('about');
@@ -124,50 +127,11 @@ const Home = () => {
 
           <Section id="experience">
             <ExperienceSection>
-              <Reveal>
-              <ExperienceItem>
-                <ExperienceDate>MAY 2025 — PRESENT</ExperienceDate>
-                <ExperienceTitle>
-                  Software Developer · <Link href="https://www.asendio.io/en" target="_blank" rel="noopener noreferrer">Asendio</Link> ↗
-                </ExperienceTitle>
-                <ExperienceDescription>
-                  Build and scale Asendio's AI-powered Learning Experience Platform with NestJS and Next.js — from
-                  adaptive learning modules to real-time feedback systems. Develop and maintain REST and GraphQL API
-                  frameworks, and ship serverless tooling on AWS Lambda, S3, and API Gateway.
-                </ExperienceDescription>
-                <TechList>
-                  <TechItem>NestJS</TechItem>
-                  <TechItem>Next.js</TechItem>
-                  <TechItem>TypeScript</TechItem>
-                  <TechItem>GraphQL</TechItem>
-                  <TechItem>AWS</TechItem>
-                  <TechItem>MongoDB</TechItem>
-                </TechList>
-              </ExperienceItem>
-              </Reveal>
-
-              <Reveal delay={0.05}>
-              <ExperienceItem>
-                <ExperienceDate>JAN 2021 — APR 2025 · 4 YRS 4 MOS</ExperienceDate>
-                <ExperienceTitle>
-                  Software Developer · <Link href="https://www.swiftyglobal.com/" target="_blank" rel="noopener noreferrer">Swifty Global</Link> ↗
-                </ExperienceTitle>
-                <ExperienceDescription>
-                  Designed and implemented scalable architecture solutions using Node.js and React.js for a variety of clients.
-                  Developed and maintained API frameworks including REST, GraphQL, and Serverless. Utilized AWS services
-                  like Lambda, S3, and API Gateway to create tools and services for customers.
-                </ExperienceDescription>
-                <TechList>
-                  <TechItem>Node.js</TechItem>
-                  <TechItem>React.js</TechItem>
-                  <TechItem>NestJS</TechItem>
-                  <TechItem>GraphQL</TechItem>
-                  <TechItem>AWS</TechItem>
-                  <TechItem>MongoDB</TechItem>
-                  <TechItem>MySQL</TechItem>
-                </TechList>
-              </ExperienceItem>
-              </Reveal>
+              {experience.map((role, index) => (
+                <Reveal key={role.id} delay={index * 0.05}>
+                  <ExperienceCard role={role} />
+                </Reveal>
+              ))}
             </ExperienceSection>
           </Section>
 
@@ -175,24 +139,7 @@ const Home = () => {
             <ProjectsSection>
               {featuredProjects.map((project, index) => (
                 <Reveal key={project.id} delay={index * 0.05}>
-                <ProjectItem>
-                  <ProjectContent>
-                    <ProjectTitle>
-                      <Link href={project.url} target="_blank" rel="noopener noreferrer">{project.title}</Link> ↗
-                    </ProjectTitle>
-                    <ProjectDescription>{project.description}</ProjectDescription>
-                    <TechList>
-                      {project.tech.map((tech) => (
-                        <TechItem key={tech}>{tech}</TechItem>
-                      ))}
-                    </TechList>
-                  </ProjectContent>
-                  {project.image && (
-                    <ProjectImage>
-                      <img src={project.image} loading="lazy" decoding="async" alt={project.imageAlt} />
-                    </ProjectImage>
-                  )}
-                </ProjectItem>
+                  <ProjectCard project={project} />
                 </Reveal>
               ))}
             </ProjectsSection>
@@ -390,162 +337,20 @@ const ExperienceSection = styled.div`
   margin-top: 50px;
 `;
 
-const ExperienceItem = styled.div`
-  margin-bottom: 50px;
-  padding: 20px 0;
-  transition: all 0.2s;
-  border-radius: 4px;
 
-  &:hover {
-    background-color: rgba(var(--accent-rgb), 0.05);
-    margin: 0 -20px;
-    padding: 20px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    backdrop-filter: blur(16px);
-  }
-`;
 
-const ExperienceDate = styled.div`
-  font-family: "SF Mono", monospace;
-  font-size: 13px;
-  color: var(--accent);
-  margin-bottom: 8px;
-`;
 
-const ExperienceTitle = styled.h3`
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--heading);
-  line-height: 1.3;
-  margin-bottom: 10px;
-`;
 
-const ExperienceDescription = styled.p`
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-  margin-bottom: 15px;
-`;
 
-const TechList = styled.div`
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-`;
-
-const TechItem = styled.span`
-  font-size: 12px;
-  color: var(--accent);
-  background-color: rgba(var(--accent-rgb), 0.1);
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-family: "SF Mono", monospace;
-`;
 
 const ProjectsSection = styled.div`
   margin-top: 50px;
 `;
 
-const ProjectItem = styled.div`
-  margin-bottom: 40px;
-  padding: 20px 0;
-  transition: all 0.2s;
-  border-radius: 4px;
-  display: flex;
-  gap: 30px;
-  align-items: flex-start;
 
-  &:hover {
-    background-color: rgba(var(--accent-rgb), 0.05);
-    margin: 0 -20px;
-    padding: 20px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    backdrop-filter: blur(16px);
-  }
 
-  @media (max-width: 768px) {
-    flex-direction: column;
-    gap: 20px;
-  }
-`;
 
-const ProjectContent = styled.div`
-  flex: 2;
-  min-width: 0;
-`;
 
-const ProjectTitle = styled.h3`
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--heading);
-  line-height: 1.3;
-  margin-bottom: 10px;
-`;
-
-const ProjectDescription = styled.p`
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-  margin-bottom: 15px;
-`;
-
-const ProjectImage = styled.div`
-  flex: 1;
-  max-width: 300px;
-  min-width: 200px;
-  position: relative;
-  order: -1;
-
-  img {
-    width: 100%;
-    height: auto;
-    display: block;
-    border-radius: 4px;
-    transition: all 0.25s cubic-bezier(0.645, 0.045, 0.355, 1);
-    filter: grayscale(100%) contrast(1) brightness(90%);
-    border: 2px solid rgba(var(--accent-rgb), 0.1);
-    box-shadow: 0 10px 30px -15px rgba(2, 12, 27, 0.7);
-  }
-
-  &:hover img {
-    filter: none;
-    transform: translate(-10px, -10px);
-    box-shadow: 0 20px 30px -15px rgba(2, 12, 27, 0.7);
-    border-color: rgba(var(--accent-rgb), 0.3);
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(var(--accent-rgb), 0.1);
-    border-radius: 4px;
-    transition: all 0.25s cubic-bezier(0.645, 0.045, 0.355, 1);
-    z-index: 1;
-    pointer-events: none;
-  }
-
-  &:hover::before {
-    background-color: transparent;
-  }
-
-  @media (max-width: 768px) {
-    max-width: 100%;
-    order: 0;
-
-    img {
-      filter: none;
-      border-color: rgba(var(--accent-rgb), 0.3);
-    }
-
-    &::before {
-      display: none;
-    }
-  }
-`;
 
 const ViewArchiveLink = styled(RouterLink)`
   display: inline-block;
