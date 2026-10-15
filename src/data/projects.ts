@@ -4,8 +4,15 @@ export interface Project {
   url: string;
   description: string;
   tech: string[];
+  /** Screenshot shown in a browser-window frame on the home page (~1400px wide). */
   image?: string;
   imageAlt?: string;
+  /** Optional muted, looping clip (webm or mp4, 6–10s). Plays while on screen; `image` is its poster. */
+  video?: string;
+  /** Your part in it, e.g. 'Lead backend developer'. Shown on the card when set. */
+  role?: string;
+  /** One or two real, measurable results, e.g. 'p95 API latency 800ms → 200ms'. Shown when set. */
+  impact?: string[];
   /** Displayed in the archive table. Adjust to the real year. */
   year: string;
   /** When true, the project is shown on the home page. */
@@ -23,7 +30,7 @@ export const projects: Project[] = [
     description:
       'AI-Powered Learning Experience Platform revolutionizing corporate training. Features adaptive learning, targeted growth modules, and real-time feedback systems trusted by leading enterprises.',
     tech: ['Next.js', 'NestJS', 'AI/ML', 'Node.js', 'TypeScript'],
-    image: '/d.png',
+    image: '/projects/asendio-lxp.jpg',
     imageAlt: 'Asendio LXP learning platform interface with AI-powered content creation',
     year: '2025',
     featured: true,
@@ -35,7 +42,7 @@ export const projects: Project[] = [
     description:
       'Comprehensive sports betting platform with real-time horse racing data, live odds, and interactive betting interface. Features daily price boosts, BOG availability, and responsive design for optimal user experience across all devices.',
     tech: ['React', 'Next.js', 'TypeScript', 'Real-time APIs', 'Node.js'],
-    image: '/b.png',
+    image: '/projects/swifty-sports.jpg',
     imageAlt: 'Swifty Sports betting interface with horse racing odds and live data',
     year: '2024',
     featured: true,
@@ -47,7 +54,7 @@ export const projects: Project[] = [
     description:
       'Advanced sports prediction platform with gamified experience. Users can predict smarter, score higher, and dominate leaderboards while competing with friends and showcasing expertise across multiple sports.',
     tech: ['React', 'TypeScript', 'D3.js', 'Node.js', 'PostgreSQL'],
-    image: '/ba.png',
+    image: '/projects/top-predictor.jpg',
     imageAlt: 'Top Predictor sports prediction interface with leaderboards and competitions',
     year: '2023',
     featured: true,
@@ -59,7 +66,7 @@ export const projects: Project[] = [
     description:
       'Global digital solutions platform delivering thrilling sports experiences and betting excitement. Architected scalable frontend solutions with extensive range of sports options and modern user interfaces.',
     tech: ['JavaScript', 'React', 'Next.js', 'MongoDB', 'AWS'],
-    image: '/c.png',
+    image: '/projects/swifty-global.jpg',
     imageAlt: 'Swifty Global platform showing sports betting interface and mobile app',
     year: '2021',
     featured: true,
