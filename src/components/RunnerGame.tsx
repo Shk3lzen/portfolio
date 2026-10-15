@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
-import { FiPlay, FiFlag, FiAward } from 'react-icons/fi';
+import { FiPlay, FiFlag, FiAward, FiShare2, FiCheck } from 'react-icons/fi';
 import {
   HEIGHT,
   GROUND_Y,
@@ -33,13 +33,17 @@ import {
   Transport,
   todayKey,
 } from './runner/net';
-import { BoardState, Leaderboard, openLeaderboard, TOP_N } from './runner/leaderboard';
+import { BoardState, Leaderboard, openApiLeaderboard, openLeaderboard, TOP_N } from './runner/leaderboard';
+import { BoardScope, ChallengeRun, apiEnabled, challengeIdFromUrl, fetchRun, shareUrlFor, submitRun } from './runner/api';
+import { PRESS, RELEASE, createTapePlayer, dtToUnits, quantizeDt, seedForDay } from './runner/tape';
 import { SPRITE_FRAMES } from './runner/sprite';
 
 // A tiny endless runner: a pixel invader hops over posts and dodges drones.
 // Space / ↑ / click / tap to jump, hold for a higher jump, press again mid-air to double jump.
 // Everyone plays the same course each day, so other visitors' bots show up alongside yours;
 // the Race button lines everyone up for a synchronised start.
+// Solo runs are recorded as tapes (see runner/tape.ts): with the score server on, each finished
+// run is submitted, replayed there, and can be shared; a shared link plays that run as a ghost.
 
 const HIGH_SCORE_KEY = 'runner-high-score';
 const COUNTDOWN_MS = 3000;
@@ -47,6 +51,7 @@ const STATE_INTERVAL_MS = 100; // position updates/s to other players: 10
 const STALE_MS = 3000; // a player we haven't heard from in this long is out
 const FORGET_MS = 6000; // …and is removed from the screen after this long
 const FONT = '"SF Mono", ui-monospace, Menlo, monospace';
+const CHALLENGE_ID = 'challenge'; // ghost id for the run a share link points at
 
 type Phase = 'idle' | 'countdown' | 'running' | 'over';
 
@@ -80,6 +85,17 @@ interface Game {
   results: Placing[] | null;
   lastSent: number;
   highScore: number;
+  day: string; // the course being played
+  tape: number[] | null; // recording of the current solo run
+  elapsed: number; // seconds since the solo run started (drives the challenge ghost)
+  challenge: ReturnType<typeof createTapePlayer> | null;
+}
+
+interface FinishedRun {
+  score: number;
+  runId: string | null;
+  rank: number | null;
+  pending: boolean;
 }
 
 const readHighScore = () => {
@@ -100,12 +116,7 @@ const saveHighScore = (score: number) => {
 
 const pad = (n: number) => String(Math.min(n, 99999)).padStart(4, '0');
 // One course per UTC day, shared by every visitor.
-const courseSeed = () => {
-  const day = todayKey();
-  let hash = 0;
-  for (let i = 0; i < day.length; i++) hash = (hash * 31 + day.charCodeAt(i)) | 0;
-  return hash >>> 0;
-};
+const courseSeed = () => seedForDay(todayKey());
 const ordinal = (n: number) => ['1st', '2nd', '3rd'][n] ?? `${n + 1}th`;
 
 const RunnerGame: React.FC = () => {
@@ -117,6 +128,11 @@ const RunnerGame: React.FC = () => {
   const announceRef = useRef<() => void>(() => {});
   const leaderboardRef = useRef<Leaderboard | null>(null);
   const [board, setBoard] = useState<BoardState | null>(null);
+  const [boardScope, setBoardScope] = useState<BoardScope>('today');
+  const [lastRun, setLastRun] = useState<FinishedRun | null>(null);
+  const [shareNote, setShareNote] = useState('');
+  const [challenge, setChallenge] = useState<ChallengeRun | null>(null);
+  const challengeRef = useRef<ChallengeRun | null>(null);
   // Colour and name are per device; the id is per tab so two tabs on one computer can still race.
   const [me] = useState(() => {
     const deviceId = getDeviceId();
@@ -164,6 +180,10 @@ const RunnerGame: React.FC = () => {
       results: null,
       lastSent: 0,
       highScore: readHighScore(),
+      day: todayKey(),
+      tape: null,
+      elapsed: 0,
+      challenge: null,
     };
     let width = 0;
     let frame = 0;
@@ -172,7 +192,8 @@ const RunnerGame: React.FC = () => {
     let transport: Transport | null = null;
     let closed = false;
     let lobby = new Map<string, PeerMeta>();
-    const nameOf = (id: string) => lobby.get(id)?.name ?? 'player';
+    const nameOf = (id: string) =>
+      lobby.get(id)?.name ?? (id === CHALLENGE_ID ? challengeRef.current?.name : undefined) ?? 'player';
 
     // ---- status shared with the lobby -------------------------------------------------
 
@@ -408,6 +429,23 @@ const RunnerGame: React.FC = () => {
         game.highScore = score;
         saveHighScore(score);
       }
+      if (game.mode !== 'solo' || score <= 0) return;
+      const tape = game.tape;
+      game.tape = null;
+      setShareNote('');
+      if (!apiEnabled || !tape) {
+        setLastRun({ score, runId: null, rank: null, pending: false });
+        return;
+      }
+      setLastRun({ score, runId: null, rank: null, pending: true });
+      submitRun({ day: game.day, deviceId: me.deviceId, name: nameRef.current, color: me.color, tape })
+        .then((res) => {
+          setLastRun((cur) => (cur && cur.score === score ? { score, runId: res.id, rank: res.rank, pending: false } : cur));
+          leaderboardRef.current?.refresh?.();
+        })
+        .catch(() => {
+          setLastRun((cur) => (cur && cur.score === score ? { ...cur, pending: false } : cur));
+        });
     };
 
     const finishRace = () => {
@@ -425,6 +463,7 @@ const RunnerGame: React.FC = () => {
         if (now >= game.countdownEnd) game.phase = 'running';
       } else if (game.phase === 'running') {
         const wasAlive = r.alive;
+        if (game.tape && r.alive) game.tape.push(dtToUnits(dt));
         step(r, dt);
         if (wasAlive && !r.alive) {
           recordScore();
@@ -440,6 +479,27 @@ const RunnerGame: React.FC = () => {
         else if (g.alive && g.go) g.d += speedAt(g.d) * dt;
       });
 
+      // The challenger's recorded run, replayed in step with ours (it keeps going after we're out).
+      if (game.challenge && game.mode === 'solo' && game.phase !== 'idle') {
+        const ghost = game.challenge.runner;
+        if (ghost.alive) {
+          game.elapsed += dt;
+          game.challenge.advanceTo(game.elapsed);
+          const color = challengeRef.current?.color ?? '#888';
+          game.ghosts.set(CHALLENGE_ID, {
+            id: CHALLENGE_ID,
+            color,
+            seed: game.seed,
+            raceId: CHALLENGE_ID,
+            y: ghost.y,
+            d: ghost.distance,
+            alive: ghost.alive,
+            go: true,
+            heardAt: now,
+          });
+        }
+      }
+
       const playing = game.phase === 'countdown' || game.phase === 'running';
       if (playing && game.runner.alive && now - game.lastSent > STATE_INTERVAL_MS) sendState(now);
       if (game.mode === 'race' && game.phase === 'running' && !r.alive && racers().every((g) => !g.alive)) {
@@ -449,7 +509,8 @@ const RunnerGame: React.FC = () => {
     };
 
     const loop = (now: number) => {
-      const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 0;
+      // Rounded to the tape's resolution, so a recorded run replays exactly.
+      const dt = last ? quantizeDt(Math.min((now - last) / 1000, 1 / 30)) : 0;
       last = now;
       // Keep animating while we play, or while other players are on screen.
       const active = game.phase === 'countdown' || game.phase === 'running' || game.ghosts.size > 0;
@@ -469,14 +530,24 @@ const RunnerGame: React.FC = () => {
     };
 
     const startSolo = () => {
+      const day = todayKey();
+      const seed = seedForDay(day);
+      const rival = challengeRef.current;
+      game.ghosts.delete(CHALLENGE_ID);
       Object.assign(game, {
         phase: 'running',
         mode: 'solo',
-        runner: newRunner(courseSeed()),
-        seed: courseSeed(),
+        runner: newRunner(seed),
+        seed,
+        day,
         raceId: null,
         results: null,
+        tape: [],
+        elapsed: 0,
+        // A challenge from today's course plays alongside as a ghost.
+        challenge: rival?.tape && rival.day === day ? createTapePlayer(seed, rival.tape) : null,
       });
+      setLastRun(null);
       syncStatus();
       startLoop();
     };
@@ -491,7 +562,11 @@ const RunnerGame: React.FC = () => {
         countdownEnd: performance.now() + COUNTDOWN_MS,
         results: null,
         lastSent: 0,
+        day: todayKey(),
+        tape: null,
+        challenge: null,
       });
+      game.ghosts.delete(CHALLENGE_ID);
       syncStatus();
       startLoop();
     };
@@ -525,7 +600,9 @@ const RunnerGame: React.FC = () => {
     const join = () => {
       if (joined) return;
       joined = true;
-      leaderboardRef.current = openLeaderboard({ deviceId: me.deviceId, name: nameRef.current, color: me.color }, setBoard);
+      leaderboardRef.current = apiEnabled
+        ? openApiLeaderboard({ deviceId: me.deviceId }, setBoard)
+        : openLeaderboard({ deviceId: me.deviceId, name: nameRef.current, color: me.color }, setBoard);
       connect(myMeta(), {
         onPeers: (list) => {
           lobby = new Map(list.map((p) => [p.id, p]));
@@ -543,9 +620,15 @@ const RunnerGame: React.FC = () => {
 
     const press = () => {
       if (game.phase === 'idle' || game.phase === 'over') startSolo();
-      else if (game.phase === 'running') pressJump(game.runner);
+      else if (game.phase === 'running') {
+        if (game.tape && game.runner.alive) game.tape.push(PRESS);
+        pressJump(game.runner);
+      }
     };
-    const release = () => releaseJump(game.runner);
+    const release = () => {
+      if (game.phase === 'running' && game.tape && game.runner.alive) game.tape.push(RELEASE);
+      releaseJump(game.runner);
+    };
 
     const isJumpKey = (e: KeyboardEvent) => e.code === 'Space' || e.code === 'ArrowUp';
     const onKeyDown = (e: KeyboardEvent) => {
@@ -601,7 +684,47 @@ const RunnerGame: React.FC = () => {
     };
   }, [me]);
 
+  // A share link (?run=<id>) loads that run: shown as a challenge, and as a ghost on today's course.
+  useEffect(() => {
+    const id = challengeIdFromUrl();
+    if (!apiEnabled || !id) return;
+    let cancelled = false;
+    fetchRun(id)
+      .then((run) => {
+        if (cancelled || !run) return;
+        challengeRef.current = run;
+        setChallenge(run);
+        stageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    leaderboardRef.current?.setScope?.(boardScope);
+  }, [boardScope]);
+
   const ready = peers.filter((p) => p.status === 'idle').length;
+
+  const shareText = (score: number) => `I scored ${score} on Shkëlzen's site — can you beat me?`;
+  const share = async () => {
+    if (!lastRun) return;
+    const url = shareUrlFor(lastRun.runId);
+    const text = shareText(lastRun.score);
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Runner · shkelzzen.xyz', text, url });
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      setShareNote('Link copied');
+    } catch (err) {
+      if ((err as Error)?.name !== 'AbortError') setShareNote(`Copy this link: ${url}`);
+    }
+  };
+  const today = todayKey();
 
   const commitName = () => {
     const next = cleanName(nameDraft) || defaultName(me.deviceId);
@@ -620,6 +743,17 @@ const RunnerGame: React.FC = () => {
         <FiPlay />
         Take a break
       </Heading>
+      {challenge && (
+        <ChallengeBanner>
+          <Dot style={{ background: challenge.color }} aria-hidden="true" />
+          <span>
+            <strong>{challenge.name}</strong> challenged you to beat <strong>{pad(challenge.score)}</strong>
+            {challenge.tape && challenge.day === today
+              ? ' — their run plays alongside yours as a ghost.'
+              : ' — that was an earlier course, so no ghost today.'}
+          </span>
+        </ChallengeBanner>
+      )}
       <Stage
         ref={stageRef}
         tabIndex={0}
@@ -660,16 +794,56 @@ const RunnerGame: React.FC = () => {
           </>
         )}
       </Lobby>
+      {lastRun && (
+        <ShareRow>
+          <ShareText>
+            Score {pad(lastRun.score)}
+            {lastRun.rank !== null && ` · #${lastRun.rank} today`}
+            {challenge && lastRun.score > challenge.score && ` · you beat ${challenge.name}!`}
+          </ShareText>
+          <ShareButton type="button" onClick={share} disabled={lastRun.pending}>
+            <FiShare2 aria-hidden="true" />
+            {lastRun.pending ? 'Saving…' : 'Share'}
+          </ShareButton>
+          <ShareLink
+            href={`https://x.com/intent/tweet?text=${encodeURIComponent(shareText(lastRun.score))}&url=${encodeURIComponent(
+              shareUrlFor(lastRun.runId)
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-disabled={lastRun.pending}
+          >
+            Post on X
+          </ShareLink>
+          {shareNote && (
+            <ShareText role="status">
+              {shareNote === 'Link copied' && <FiCheck aria-hidden="true" />} {shareNote}
+            </ShareText>
+          )}
+        </ShareRow>
+      )}
       <Board aria-labelledby="runner-board-title">
-        <BoardTitle id="runner-board-title">
-          <FiAward aria-hidden="true" />
-          Today&apos;s top {TOP_N}
-          <BoardNote>resets 00:00 UTC</BoardNote>
-        </BoardTitle>
+        <BoardHeader>
+          <BoardTitle id="runner-board-title">
+            <FiAward aria-hidden="true" />
+            {apiEnabled ? <>Top {TOP_N}</> : <>Today&apos;s top {TOP_N}</>}
+          </BoardTitle>
+          {apiEnabled && (
+            <ScopeTabs>
+              <ScopeButton type="button" aria-pressed={boardScope === 'today'} onClick={() => setBoardScope('today')}>
+                Today
+              </ScopeButton>
+              <ScopeButton type="button" aria-pressed={boardScope === 'all'} onClick={() => setBoardScope('all')}>
+                All time
+              </ScopeButton>
+            </ScopeTabs>
+          )}
+          {boardScope === 'today' && <BoardNote>resets 00:00 UTC</BoardNote>}
+        </BoardHeader>
         {board === null ? (
           <BoardNote as="p">Loading…</BoardNote>
         ) : board.entries.length === 0 ? (
-          <BoardNote as="p">No scores yet today. Set the first one!</BoardNote>
+          <BoardNote as="p">{board.scope === 'all' ? 'No scores yet.' : 'No scores yet today.'} Set the first one!</BoardNote>
         ) : (
           <BoardList>
             {board.entries.map((entry, i) => (
@@ -683,7 +857,9 @@ const RunnerGame: React.FC = () => {
           </BoardList>
         )}
         {board && board.mine > 0 && !board.entries.some((e) => e.deviceId === me.deviceId) && (
-          <BoardNote as="p">Your best today: {pad(board.mine)}</BoardNote>
+          <BoardNote as="p">
+            Your best{board.scope === 'today' ? ' today' : ''}: {pad(board.mine)}
+          </BoardNote>
         )}
         {board && !board.shared && (
           <BoardNote as="p">Couldn&apos;t reach the shared board, so this shows this device only.</BoardNote>
@@ -789,16 +965,24 @@ const Board = styled.section`
   color: var(--text);
 `;
 
+const BoardHeader = styled.div`
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+`;
+
 const BoardTitle = styled.h4`
   display: flex;
   align-items: baseline;
   gap: 8px;
+  margin: 0;
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--heading);
-  margin-bottom: 10px;
 
   svg {
     align-self: center;
@@ -841,6 +1025,118 @@ const BoardName = styled.span`
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+`;
+
+const ChallengeBanner = styled.p`
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+
+  strong {
+    color: var(--heading);
+  }
+
+  > span:first-child {
+    flex: none;
+  }
+`;
+
+const ShareRow = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 12px;
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+`;
+
+const ShareText = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+`;
+
+const ShareButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font: inherit;
+  color: var(--bg);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+`;
+
+const ShareLink = styled.a`
+  color: var(--accent);
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  &[aria-disabled='true'] {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+`;
+
+const ScopeTabs = styled.span`
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 6px;
+  background: rgba(var(--border-rgb), 0.12);
+  align-self: center;
+`;
+
+const ScopeButton = styled.button`
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &[aria-pressed='true'] {
+    color: var(--heading);
+    background: var(--bg-elevated);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
 `;
 
 const RaceButton = styled.button`

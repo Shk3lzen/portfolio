@@ -7,6 +7,9 @@
 // malformed is dropped. Only ids, names, colours and positions are sent; never IP addresses.
 
 import type { MqttClient } from 'mqtt';
+import { MAX_NAME_LENGTH, cleanName, isColor, isId, isName, isNum } from './rules';
+
+export { MAX_NAME_LENGTH, cleanName, isColor, isId, isName, isNum };
 
 export type PlayerStatus = 'idle' | 'solo' | 'race';
 
@@ -69,17 +72,6 @@ export const colorFor = (id: string) => {
 const NAME_KEY = 'runner-name';
 const ADJECTIVES = ['Swift', 'Brave', 'Sneaky', 'Lucky', 'Turbo', 'Fuzzy', 'Mighty', 'Pixel', 'Cosmic', 'Jolly', 'Zippy', 'Sly'];
 const ANIMALS = ['Fox', 'Owl', 'Panda', 'Tiger', 'Otter', 'Koala', 'Falcon', 'Llama', 'Gecko', 'Moose', 'Lynx', 'Yak'];
-export const MAX_NAME_LENGTH = 14;
-
-// Letters (any language), digits, spaces, - and _ only; trimmed and capped.
-const NAME_DISALLOWED = new RegExp('[^\\p{L}\\p{N} _-]', 'gu');
-export const cleanName = (raw: string) =>
-  raw
-    .replace(NAME_DISALLOWED, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, MAX_NAME_LENGTH)
-    .trim();
 
 // A fun default like "Turbo Otter", stable per device.
 export const defaultName = (deviceId: string) => {
@@ -107,12 +99,8 @@ export const saveName = (name: string) => {
 
 // ---- validation (messages from a public channel are untrusted) -------------------------
 
-export const isId = (v: unknown): v is string => typeof v === 'string' && /^[a-z0-9-]{1,32}$/.test(v);
-export const isNum = (v: unknown, max: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max;
-export const isColor = (v: unknown): v is string => typeof v === 'string' && /^hsl\(\d{1,3}, 80%, 58%\)$/.test(v);
 const STATUSES: PlayerStatus[] = ['idle', 'solo', 'race'];
 
-export const isName = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && cleanName(v) === v;
 
 const parseMeta = (v: any): PeerMeta | null =>
   v && isId(v.id) && isName(v.name) && isColor(v.color) && STATUSES.includes(v.status)

@@ -1,0 +1,15 @@
+name = "shkelzzen-runner"
+main = "src/index.ts"
+compatibility_date = "2025-09-01"
+
+[vars]
+# Where share links send people to play.
+SITE_URL = "https://shkelzzen.xyz"
+# Origins allowed to call the API from a browser (comma-separated).
+ALLOWED_ORIGINS = "https://shkelzzen.xyz,http://localhost:3000,http://localhost:3001"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "shkelzzen-runner"
+# From `npx wrangler d1 create shkelzzen-runner`. Local dev (`npm run dev`) works without it.
+database_id = "00000000-0000-0000-0000-000000000000"
