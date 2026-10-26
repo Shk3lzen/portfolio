@@ -1,23 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { useReducedMotion } from 'framer-motion';
-import { SPRITE_FRAMES } from '../runner/sprite';
+import { BotSprite, botFor } from '../runner/sprite';
 import { colorFor, getDeviceId } from '../runner/net';
 
-// Photo with an accent ring; hovering it swaps in the runner's pixel invader, in this
-// visitor's own colour. With no photo set, the invader is the avatar.
+// Photo with an accent ring; hovering it swaps in this visitor's pixel bot (one of the runner's
+// bots, picked per device) in their own colour. With no photo set, the bot is the avatar.
 //
-// The invader is alive: its legs shuffle, it blinks, its pupils follow the cursor (or glance
+// The bot is alive: its legs shuffle, it blinks, its pupils follow the cursor (or glance
 // around on touch screens) and it hops when hovered or clicked. Reduced-motion visitors get a
-// still invader whose eyes still follow the cursor.
+// still bot whose eyes still follow the cursor.
 
-const ROWS = SPRITE_FRAMES[0].length;
-const COLS = SPRITE_FRAMES[0][0].length;
-// The two holes in the sprite's face (row 2: 'XX.XXXX.XX').
-const EYES = [
-  { x: 2, y: 2 },
-  { x: 7, y: 2 },
-];
 const SHUFFLE_MS = 420;
 const NEAR_PX = 24; // cursor this close to the face: look straight ahead
 
@@ -31,7 +24,12 @@ const lookToward = (fromX: number, fromY: number, toX: number, toY: number): Loo
   return { dx: Math.round(Math.cos(angle)), dy: Math.round(Math.sin(angle)) };
 };
 
-const Invader: React.FC<{ color: string; hopping: boolean; onHopEnd: () => void }> = ({ color, hopping, onHopEnd }) => {
+const Invader: React.FC<{ bot: BotSprite; color: string; hopping: boolean; onHopEnd: () => void }> = ({
+  bot,
+  color,
+  hopping,
+  onHopEnd,
+}) => {
   const reduceMotion = useReducedMotion();
   const svgRef = useRef<SVGSVGElement>(null);
   const [frame, setFrame] = useState(0);
@@ -83,7 +81,9 @@ const Invader: React.FC<{ color: string; hopping: boolean; onHopEnd: () => void 
     };
   }, [reduceMotion]);
 
-  const rows = SPRITE_FRAMES[frame];
+  const rows = bot.frames[frame];
+  const ROWS = rows.length;
+  const COLS = rows[0].length;
   const size = COLS + 2;
 
   return (
@@ -93,7 +93,7 @@ const Invader: React.FC<{ color: string; hopping: boolean; onHopEnd: () => void 
         {rows.flatMap((row, y) =>
           Array.from(row, (cell, x) => (cell === 'X' ? <rect key={`${x}-${y}`} x={x} y={y} width={1} height={1} fill={color} /> : null))
         )}
-        {EYES.map(({ x, y }) =>
+        {bot.eyes.map(({ x, y }) =>
           blink ? (
             <rect key={`eye-${x}`} x={x} y={y} width={1} height={1} fill={color} />
           ) : (
@@ -111,6 +111,7 @@ const Invader: React.FC<{ color: string; hopping: boolean; onHopEnd: () => void 
 const Avatar: React.FC<{ src?: string; alt: string }> = ({ src, alt }) => {
   const reduceMotion = useReducedMotion();
   const [color] = useState(() => colorFor(getDeviceId()));
+  const [bot] = useState(() => botFor(getDeviceId()));
   const [hopping, setHopping] = useState(false);
   const hop = () => {
     if (!reduceMotion) setHopping(true);
@@ -125,7 +126,7 @@ const Avatar: React.FC<{ src?: string; alt: string }> = ({ src, alt }) => {
     >
       {src && <img src={src} alt={alt} width={72} height={72} decoding="async" />}
       <InvaderLayer>
-        <Invader color={color} hopping={hopping} onHopEnd={() => setHopping(false)} />
+        <Invader bot={bot} color={color} hopping={hopping} onHopEnd={() => setHopping(false)} />
       </InvaderLayer>
     </Frame>
   );

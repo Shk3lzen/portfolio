@@ -36,7 +36,7 @@ import {
 import { BoardState, Leaderboard, openApiLeaderboard, openLeaderboard, TOP_N } from './runner/leaderboard';
 import { BoardScope, ChallengeRun, apiEnabled, challengeIdFromUrl, fetchRun, submitRun } from './runner/api';
 import { PRESS, RELEASE, createTapePlayer, dtToUnits, quantizeDt, seedForDay } from './runner/tape';
-import { SPRITE_FRAMES } from './runner/sprite';
+import { BotSprite, botFor, botForPlayer } from './runner/sprite';
 
 // A tiny endless runner: a pixel invader hops over posts and dodges drones.
 // Space / ↑ / click / tap to jump, hold for a higher jump, press again mid-air to double jump.
@@ -133,7 +133,7 @@ const RunnerGame: React.FC = () => {
   // Colour and name are per device; the id is per tab so two tabs on one computer can still race.
   const [me] = useState(() => {
     const deviceId = getDeviceId();
-    return { id: `${deviceId}-${Math.random().toString(36).slice(2, 6)}`, deviceId, color: colorFor(deviceId) };
+    return { id: `${deviceId}-${Math.random().toString(36).slice(2, 6)}`, deviceId, color: colorFor(deviceId), bot: botFor(deviceId) };
   });
   const [name, setName] = useState(() => loadName(me.deviceId));
   const [nameDraft, setNameDraft] = useState(name);
@@ -226,11 +226,11 @@ const RunnerGame: React.FC = () => {
       draw();
     };
 
-    const drawSprite = (x: number, y: number, color: string, legFrame: number, alpha: number) => {
+    const drawSprite = (x: number, y: number, bot: BotSprite, color: string, legFrame: number, alpha: number) => {
       const top = GROUND_Y - PLAYER_H - y;
       ctx.globalAlpha = alpha;
       ctx.fillStyle = color;
-      SPRITE_FRAMES[legFrame].forEach((row, r) => {
+      bot.frames[legFrame].forEach((row, r) => {
         for (let c = 0; c < row.length; c++) {
           if (row[c] === 'X') ctx.fillRect(x + c * PIXEL, top + r * PIXEL, PIXEL, PIXEL);
         }
@@ -346,7 +346,7 @@ const RunnerGame: React.FC = () => {
         else if (x + PLAYER_W < 0) drawEdgeMarker('left', slots.left++, g.color, `-${gap} ${label}`);
         else {
           const alpha = g.alive ? 0.55 : 0.2;
-          drawSprite(x, g.y, g.color, g.alive && g.go ? Math.floor(g.d / 40) % 2 : 0, alpha);
+          drawSprite(x, g.y, botForPlayer(g.id), g.color, g.alive && g.go ? Math.floor(g.d / 40) % 2 : 0, alpha);
           drawNameTag(x, g.y, label, g.color, Math.min(1, alpha + 0.3));
         }
       });
@@ -354,7 +354,7 @@ const RunnerGame: React.FC = () => {
       const myX = PLAYER_X + r.distance - camera;
       const legFrame = game.phase === 'running' && r.alive && r.y === 0 ? Math.floor(r.distance / 40) % 2 : 0;
       const myAlpha = r.alive || !racing ? 1 : 0.3;
-      drawSprite(myX, r.y, me.color, legFrame, myAlpha);
+      drawSprite(myX, r.y, me.bot, me.color, legFrame, myAlpha);
       drawNameTag(myX, r.y, nameRef.current, heading, myAlpha);
 
       // Score
