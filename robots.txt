@@ -1,5 +1,7 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Disallow: /secret-vault/
+
+# Robots stay out. Humans are welcome.
 
 Sitemap: https://shkelzzen.xyz/sitemap.xml
