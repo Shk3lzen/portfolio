@@ -16,10 +16,13 @@ import {
   FiSearch,
   FiSend,
   FiDownload,
+  FiTerminal,
 } from 'react-icons/fi';
 import { useTheme } from '../theme/ThemeContext';
 import { projects } from '../data/projects';
 import { profile } from '../data/profile';
+import { find } from '../hunt/hunt';
+import { openTerminal } from './Terminal';
 
 interface Command {
   id: string;
@@ -75,6 +78,14 @@ const CommandPalette: React.FC = () => {
         icon: theme === 'dark' ? <FiSun /> : <FiMoon />,
         action: toggle,
       },
+      {
+        id: 'terminal',
+        title: 'Open terminal',
+        group: 'Tools',
+        keywords: 'shell bash cli command line console',
+        icon: <FiTerminal />,
+        action: openTerminal,
+      },
       { id: 'contact', title: 'Get in touch', group: 'Contact', keywords: 'hire email message talk', icon: <FiSend />, action: () => openExternal(profile.contactUrl) },
       { id: 'github', title: 'Open GitHub', group: 'Social', keywords: 'code repos', icon: <FiGithub />, action: () => openExternal(profile.github) },
       { id: 'linkedin', title: 'Open LinkedIn', group: 'Social', keywords: 'contact connect', icon: <FiLinkedin />, action: () => openExternal(profile.linkedin) },
@@ -107,6 +118,18 @@ const CommandPalette: React.FC = () => {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return commands;
+    // Hidden: only appears for root (a treasure hunt fragment).
+    if (q === 'sudo' || q.startsWith('sudo ')) {
+      return [
+        {
+          id: 'sudo',
+          title: 'sudo make me a sandwich',
+          group: 'Root',
+          icon: <FiTerminal />,
+          action: () => find('sudo'),
+        },
+      ];
+    }
     return commands.filter((c) => `${c.title} ${c.group} ${c.keywords ?? ''}`.toLowerCase().includes(q));
   }, [commands, query]);
 

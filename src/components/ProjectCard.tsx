@@ -1,43 +1,97 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
+import { motion } from 'framer-motion';
 import { FiArrowUpRight, FiTrendingUp } from 'react-icons/fi';
+import { find } from '../hunt/hunt';
 import type { Project } from '../data/projects';
 import ProjectMedia from './ProjectMedia';
 import TechTags from './TechTags';
 
 // A featured project: product shot on top, then what it is, what I did, what it achieved.
 // The whole card is clickable through the title link (stretched over the card).
-const ProjectCard: React.FC<{ project: Project }> = ({ project }) => (
-  <Card>
-    {project.image && (
-      <ProjectMedia url={project.url} image={project.image} alt={project.imageAlt ?? project.title} video={project.video} />
-    )}
-    <Body>
-      <Meta>
-        {project.year}
-        {project.role && <> · {project.role}</>}
-      </Meta>
-      <Title>
-        <StretchedLink href={project.url} target="_blank" rel="noopener noreferrer">
-          {project.title}
-          <FiArrowUpRight aria-hidden="true" />
-        </StretchedLink>
-      </Title>
-      <Description>{project.description}</Description>
-      {project.impact && project.impact.length > 0 && (
-        <Impact>
-          {project.impact.map((line) => (
-            <li key={line}>
-              <FiTrendingUp aria-hidden="true" />
-              {line}
-            </li>
-          ))}
-        </Impact>
+// Shift-click flips it over to a back side instead (a season 2 treasure-hunt fragment).
+const ProjectCard: React.FC<{ project: Project }> = ({ project }) => {
+  const [flipped, setFlipped] = useState(false);
+
+  const onClickCapture = (e: React.MouseEvent) => {
+    if (!e.shiftKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setFlipped((f) => !f);
+    find('flip');
+  };
+
+  if (flipped) {
+    return (
+      <Card onClickCapture={onClickCapture}>
+        <Back initial={{ rotateY: 90, opacity: 0 }} animate={{ rotateY: 0, opacity: 1 }} transition={{ duration: 0.3 }}>
+          <Meta>The back of the card</Meta>
+          <Title>{project.title}</Title>
+          <Description>
+            You found the other side. Built in {project.year} with {project.tech.length} technologies
+            {project.role ? `, where my part was: ${project.role.toLowerCase()}` : ''}. Most visitors only ever see the
+            front.
+          </Description>
+          <Description>
+            <FlipBack type="button" onClick={() => setFlipped(false)}>
+              Flip it back
+            </FlipBack>
+          </Description>
+        </Back>
+      </Card>
+    );
+  }
+
+  return (
+    <Card onClickCapture={onClickCapture}>
+      {project.image && (
+        <ProjectMedia url={project.url} image={project.image} alt={project.imageAlt ?? project.title} video={project.video} />
       )}
-      <TechTags tech={project.tech} />
-    </Body>
-  </Card>
-);
+      <Body>
+        <Meta>
+          {project.year}
+          {project.role && <> · {project.role}</>}
+        </Meta>
+        <Title>
+          <StretchedLink href={project.url} target="_blank" rel="noopener noreferrer">
+            {project.title}
+            <FiArrowUpRight aria-hidden="true" />
+          </StretchedLink>
+        </Title>
+        <Description>{project.description}</Description>
+        {project.impact && project.impact.length > 0 && (
+          <Impact>
+            {project.impact.map((line) => (
+              <li key={line}>
+                <FiTrendingUp aria-hidden="true" />
+                {line}
+              </li>
+            ))}
+          </Impact>
+        )}
+        <TechTags tech={project.tech} />
+      </Body>
+    </Card>
+  );
+};
+
+const Back = styled(motion.div)`
+  padding: 24px 4px;
+`;
+
+const FlipBack = styled.button`
+  font: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+`;
 
 const StretchedLink = styled.a`
   display: inline-flex;

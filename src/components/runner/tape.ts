@@ -8,7 +8,7 @@
 //   PRESS   jump pressed;
 //   RELEASE jump released.
 
-import { Runner, newRunner, pressJump, releaseJump, scoreOf, step } from './engine';
+import { Modifier, Runner, newRunner, pressJump, releaseJump, scoreOf, step } from './engine';
 
 export const PRESS = -1;
 export const RELEASE = -2;
@@ -52,8 +52,8 @@ export interface ReplayResult {
   seconds: number;
 }
 
-export const replay = (seed: number, tape: number[]): ReplayResult => {
-  const r = newRunner(seed);
+export const replay = (seed: number, tape: number[], mod: Modifier = 'classic'): ReplayResult => {
+  const r = newRunner(seed, mod);
   let seconds = 0;
   for (const entry of tape) {
     if (!r.alive) break;
@@ -63,8 +63,8 @@ export const replay = (seed: number, tape: number[]): ReplayResult => {
 };
 
 // Plays a tape back in step with a clock, e.g. to draw someone's run as a ghost beside yours.
-export const createTapePlayer = (seed: number, tape: number[]) => {
-  const runner = newRunner(seed);
+export const createTapePlayer = (seed: number, tape: number[], mod: Modifier = 'classic') => {
+  const runner = newRunner(seed, mod);
   let index = 0;
   let seconds = 0;
   return {

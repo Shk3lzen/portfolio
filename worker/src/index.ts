@@ -2,7 +2,8 @@
 //
 //   POST /runs           submit a finished run as a tape; it's replayed through the game engine
 //                        and only the replayed score counts
-//   GET  /board          ?scope=today|all&device=<id> → top 10 (best run per device) + your best
+//   GET  /board          ?scope=today|all&device=<id> → top 10 (best run per device) + your best,
+//                        and the champion: whoever had the best run over the last seven days
 //   GET  /runs/:id       one run, with its tape when kept (for challenge ghosts)
 //   GET  /s/:id          share page: Open Graph tags for link previews, then on to the game
 //   GET  /og/:id.png     the generated preview image for a run
@@ -11,6 +12,7 @@
 // It can't prove a human played it — a patient bot could still submit a perfect run.
 
 import { isTape, replay, seedForDay } from '../../src/components/runner/tape';
+import { modifierForDay } from '../../src/components/runner/engine';
 import { isColor, isId, isName } from '../../src/components/runner/rules';
 import { renderCard } from './card';
 
@@ -131,7 +133,7 @@ const submitRun = async (request: Request, env: Env, json: Json, fail: Fail) => 
   // Today's course, or yesterday's for a run that finished just after midnight UTC.
   if (day !== dayKey() && day !== dayKey(-1)) return fail(400, 'that course has closed');
 
-  const result = replay(seedForDay(day), tape);
+  const result = replay(seedForDay(day), tape, modifierForDay(day));
   if (result.alive) return fail(400, 'run did not finish');
   if (result.score <= 0) return fail(400, 'nothing to record');
 
@@ -189,10 +191,18 @@ const board = async (url: URL, env: Env, json: Json, fail: Fail) => {
     mine = (await mineQuery.first<{ best: number | null }>())?.best ?? 0;
   }
 
+  // Last week's champion wears a crown on the board for the next seven days.
+  const champion = await env.DB.prepare(
+    'SELECT device_id FROM runs WHERE day >= ?1 AND day < ?2 ORDER BY score DESC, created_at ASC LIMIT 1'
+  )
+    .bind(dayKey(-7), day)
+    .first<{ device_id: string }>();
+
   return json(
     {
       scope,
       day,
+      champion: champion?.device_id ?? null,
       entries: results.map((r) => ({ runId: r.id, deviceId: r.device_id, name: r.name, color: r.color, score: r.score })),
       mine,
     },

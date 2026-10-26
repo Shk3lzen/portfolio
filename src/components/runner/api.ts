@@ -1,7 +1,7 @@
 // Client for the runner's score server (worker/ — a Cloudflare Worker). Set REACT_APP_RUNNER_API
 // to its URL at build time to turn it on; without it the game keeps the peer-to-peer daily board.
 
-import { isColor, isName, isNum } from './rules';
+import { isColor, isId, isName, isNum } from './rules';
 import { isTape } from './tape';
 
 export const RUNNER_API = (process.env.REACT_APP_RUNNER_API ?? '').replace(/\/$/, '');
@@ -55,7 +55,11 @@ export const fetchBoard = async (scope: BoardScope, deviceId: string) => {
   const entries: ApiEntry[] = (Array.isArray(data?.entries) ? data.entries : []).filter(
     (e: any) => e && typeof e.runId === 'string' && isName(e.name) && isColor(e.color) && isNum(e.score, MAX_SCORE)
   );
-  return { entries, mine: isNum(data?.mine, MAX_SCORE) ? data.mine : 0 };
+  return {
+    entries,
+    mine: isNum(data?.mine, MAX_SCORE) ? data.mine : 0,
+    champion: isId(data?.champion) ? (data.champion as string) : null,
+  };
 };
 
 export const fetchRun = async (id: string): Promise<ChallengeRun | null> => {

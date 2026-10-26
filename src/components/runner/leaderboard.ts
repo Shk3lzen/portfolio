@@ -17,6 +17,7 @@ export interface ScoreEntry {
   name: string;
   color: string;
   score: number;
+  runId?: string; // score-server boards: the run behind this entry, to race as a ghost
 }
 
 export interface BoardState {
@@ -24,6 +25,7 @@ export interface BoardState {
   shared: boolean; // false when showing only this device's score (offline fallback)
   mine: number; // this device's best for the board's scope (0 if none)
   scope: BoardScope;
+  champion?: string | null; // score-server boards: device with last week's best run
 }
 
 export interface Leaderboard {
@@ -39,20 +41,22 @@ export const TOP_N = 10;
 const MAX_SCORE = 99999;
 const BEST_KEY = 'runner-best-today';
 
-const scoresTopic = (day: string) => `${TOPIC_BASE}/scores/${day}`;
+// Each game keeps its own board: the runner's is 'scores', others pass their own name.
+const scoresTopic = (day: string, board = 'scores') => `${TOPIC_BASE}/${board}/${day}`;
+const bestKeyFor = (board: string) => (board === 'scores' ? BEST_KEY : `${board}-best-today`);
 
-const readBest = (day: string): number => {
+const readBest = (day: string, key = BEST_KEY): number => {
   try {
-    const saved = JSON.parse(localStorage.getItem(BEST_KEY) ?? 'null');
+    const saved = JSON.parse(localStorage.getItem(key) ?? 'null');
     return saved && saved.day === day && isNum(saved.score, MAX_SCORE) ? saved.score : 0;
   } catch {
     return 0;
   }
 };
 
-const writeBest = (day: string, score: number) => {
+const writeBest = (day: string, score: number, key = BEST_KEY) => {
   try {
-    localStorage.setItem(BEST_KEY, JSON.stringify({ day, score }));
+    localStorage.setItem(key, JSON.stringify({ day, score }));
   } catch {
     /* ignore */
   }
@@ -79,8 +83,11 @@ export const parseEntry = (deviceId: string, raw: string, day: string): ScoreEnt
 
 export const openLeaderboard = (
   me: { deviceId: string; name: string; color: string },
-  onChange: (state: BoardState) => void
+  onChange: (state: BoardState) => void,
+  board = 'scores'
 ): Leaderboard => {
+  const bestKey = bestKeyFor(board);
+  const topicFor = (d: string) => scoresTopic(d, board);
   let day = todayKey();
   let identity = { name: me.name, color: me.color };
   const entries = new Map<string, ScoreEntry>();
@@ -88,7 +95,7 @@ export const openLeaderboard = (
   let closed = false;
 
   const myEntry = (): ScoreEntry | null => {
-    const score = readBest(day);
+    const score = readBest(day, bestKey);
     return score > 0 ? { deviceId: me.deviceId, ...identity, score } : null;
   };
 
@@ -102,7 +109,7 @@ export const openLeaderboard = (
   };
 
   const onMessage = (topic: string, payload: Uint8Array) => {
-    const prefix = `${scoresTopic(day)}/`;
+    const prefix = `${topicFor(day)}/`;
     if (!topic.startsWith(prefix)) return;
     const deviceId = topic.slice(prefix.length);
     const entry = parseEntry(deviceId, new TextDecoder().decode(payload), day);
@@ -116,7 +123,7 @@ export const openLeaderboard = (
     if (!mine) return;
     entries.set(me.deviceId, mine);
     client?.publish(
-      `${scoresTopic(day)}/${me.deviceId}`,
+      `${topicFor(day)}/${me.deviceId}`,
       JSON.stringify({ day, name: mine.name, color: mine.color, score: mine.score }),
       { qos: 1, retain: true }
     );
@@ -125,7 +132,7 @@ export const openLeaderboard = (
   const watch = () => {
     if (!client) return;
     entries.clear();
-    client.subscribe(`${scoresTopic(day)}/+`, { qos: 1 });
+    client.subscribe(`${topicFor(day)}/+`, { qos: 1 });
     // Re-publish our stored best in case the broker lost it.
     publishMine();
   };
@@ -134,7 +141,7 @@ export const openLeaderboard = (
   const rollover = () => {
     const today = todayKey();
     if (today === day) return;
-    client?.unsubscribe(`${scoresTopic(day)}/+`);
+    client?.unsubscribe(`${topicFor(day)}/+`);
     day = today;
     watch();
     emit();
@@ -162,8 +169,8 @@ export const openLeaderboard = (
     report(score) {
       rollover();
       const s = Math.min(MAX_SCORE, Math.floor(score));
-      if (s <= readBest(day)) return;
-      writeBest(day, s);
+      if (s <= readBest(day, bestKey)) return;
+      writeBest(day, s, bestKey);
       publishMine();
       emit();
     },
@@ -177,7 +184,7 @@ export const openLeaderboard = (
       window.clearInterval(dayTimer);
       if (client) {
         client.off('message', onMessage);
-        client.unsubscribe(`${scoresTopic(day)}/+`);
+        client.unsubscribe(`${topicFor(day)}/+`);
         client = null;
         releaseBroker();
       }
@@ -198,8 +205,8 @@ export const openApiLeaderboard = (me: { deviceId: string }, onChange: (state: B
     const id = ++request;
     const forScope = scope;
     try {
-      const { entries, mine } = await fetchBoard(forScope, me.deviceId);
-      if (!closed && id === request) onChange({ entries, shared: true, mine, scope: forScope });
+      const { entries, mine, champion } = await fetchBoard(forScope, me.deviceId);
+      if (!closed && id === request) onChange({ entries, shared: true, mine, scope: forScope, champion });
     } catch {
       if (!closed && id === request) onChange({ entries: [], shared: false, mine: readBest(todayKey()), scope: forScope });
     }

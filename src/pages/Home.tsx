@@ -7,6 +7,8 @@ import { useMouseSpotlight } from '../hooks/useMouseSpotlight';
 import Reveal from '../components/Reveal';
 import GitHubActivity from '../components/GitHubActivity';
 import RunnerGame from '../components/RunnerGame';
+import InvaderGame from '../components/InvaderGame';
+import { INVADERS_ENABLED } from '../features';
 import Hero from '../components/hero/Hero';
 import { profile } from '../data/profile';
 import { experience } from '../data/experience';
@@ -151,6 +153,8 @@ const Home = () => {
             <GitHubActivity />
 
             <RunnerGame />
+
+            {INVADERS_ENABLED && <InvaderGame />}
 
             <Copyright>
               © 2025 Shkëlzen Berisha. All rights reserved.

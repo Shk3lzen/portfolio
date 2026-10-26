@@ -77,3 +77,30 @@ ul {
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ---- Retro mode (the Konami code): terminal green, monospace everything, scanlines ---- */
+:root[data-retro] {
+  --accent: #39ff14;
+  --accent-rgb: 57, 255, 20;
+  --heading: #b6ffa8;
+}
+
+:root[data-retro][data-theme='light'] {
+  --accent: #15803d;
+  --accent-rgb: 21, 128, 61;
+  --heading: #14532d;
+}
+
+:root[data-retro] body,
+:root[data-retro] body * {
+  font-family: 'SF Mono', ui-monospace, Menlo, monospace !important;
+}
+
+:root[data-retro] body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgba(0, 0, 0, 0.12) 0 1px, transparent 1px 3px);
+}
