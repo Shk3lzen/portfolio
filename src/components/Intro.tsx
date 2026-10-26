@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components';
 import { AnimatePresence, motion } from 'framer-motion';
-import { SPRITE_FRAMES } from './runner/sprite';
+import { BotSprite, botFor } from './runner/sprite';
 import { colorFor, getDeviceId } from './runner/net';
 
 // Opening animation: the runner game's invader (in this visitor's own colour) runs in,
@@ -63,7 +63,7 @@ const ScrambleText: React.FC<{ text: string; delay: number; duration: number }> 
   return <>{shown}</>;
 };
 
-const Invader: React.FC<{ color: string }> = ({ color }) => {
+const Invader: React.FC<{ bot: BotSprite; color: string }> = ({ bot, color }) => {
   const [frame, setFrame] = useState(0);
 
   // Shuffle the legs while running; stand still once landed.
@@ -79,7 +79,7 @@ const Invader: React.FC<{ color: string }> = ({ color }) => {
     };
   }, []);
 
-  const rows = SPRITE_FRAMES[frame];
+  const rows = bot.frames[frame];
   return (
     <svg
       width={rows[0].length * PIXEL}
@@ -98,6 +98,7 @@ const Invader: React.FC<{ color: string }> = ({ color }) => {
 const Intro: React.FC = () => {
   const [show, setShow] = useState(shouldPlay);
   const [color] = useState(() => colorFor(getDeviceId()));
+  const [bot] = useState(() => botFor(getDeviceId()));
 
   useEffect(() => {
     if (!show) return;
@@ -147,14 +148,14 @@ const Intro: React.FC = () => {
               <motion.div
                 style={{ position: 'absolute', bottom: 2, left: '50%' }}
                 initial={{ x: '-50vw' }}
-                animate={{ x: `-${(SPRITE_FRAMES[0][0].length * PIXEL) / 2}px` }}
+                animate={{ x: `-${(bot.frames[0][0].length * PIXEL) / 2}px` }}
                 transition={{ delay: RUN_START, duration: RUN_END - RUN_START, ease: [0.22, 1, 0.36, 1] }}
               >
                 <motion.div
                   animate={{ y: [0, -34, 0] }}
                   transition={{ delay: RUN_END, duration: LAND - RUN_END, times: jumpTimes, ease: ['easeOut', 'easeIn'] }}
                 >
-                  <Invader color={color} />
+                  <Invader bot={bot} color={color} />
                 </motion.div>
               </motion.div>
               <Ground
